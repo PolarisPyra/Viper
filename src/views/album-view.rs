@@ -5,78 +5,105 @@ use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     egui::TopBottomPanel::top("album-sort-toolbar")
+        .exact_height(48.0)
         .frame(
             egui::Frame::new()
                 .fill(egui::Color32::from_rgb(16, 18, 23))
-                .inner_margin(egui::Margin::symmetric(20, 7)),
+                .inner_margin(egui::Margin {
+                    left: 20,
+                    right: 20,
+                    top: 4,
+                    bottom: 12,
+                }),
         )
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let active_sort = app.settings.album_sort;
-                let mut selected_sort = None;
-                ui.scope(|ui| {
-                    let widgets = &mut ui.visuals_mut().widgets;
-                    widgets.inactive.bg_fill = egui::Color32::from_rgb(27, 31, 41);
-                    widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
-                    widgets.inactive.bg_stroke =
-                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61));
-                    widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-                    widgets.hovered.bg_stroke =
-                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(54, 59, 74));
-                    widgets.active.bg_fill = egui::Color32::from_rgb(42, 46, 59);
-                    widgets.active.bg_stroke =
-                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(64, 69, 86));
-                    ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
-                    egui::ComboBox::from_id_salt("album-sort")
-                        .selected_text(
-                            egui::RichText::new(active_sort.label())
-                                .size(13.0)
-                                .color(egui::Color32::from_rgb(221, 225, 236)),
-                        )
-                        .width(140.0)
-                        .show_ui(ui, |ui| {
-                            for sort in AlbumSort::ALL {
-                                if ui
-                                    .selectable_label(active_sort == sort, sort.label())
-                                    .clicked()
-                                {
-                                    selected_sort = Some(sort);
-                                    ui.close_menu();
-                                }
-                            }
-                        });
-                });
-                if let Some(sort) = selected_sort {
-                    app.album_sort_changed(sort);
-                }
-                let direction = app.settings.sort_ascending;
-                let (rect, response) =
-                    ui.allocate_exact_size(egui::vec2(34.0, 32.0), egui::Sense::click());
-                if response.hovered() {
-                    ui.painter()
-                        .rect_filled(rect, 6.0, egui::Color32::from_rgb(35, 39, 50));
-                }
-                icons::draw(
-                    ui.painter(),
-                    rect.shrink(7.0),
-                    if direction {
-                        Icon::SortAscending
-                    } else {
-                        Icon::SortDescending
-                    },
+            ui.allocate_ui_with_layout(
+                ui.available_size(),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let active_sort = app.settings.album_sort;
+                    let mut selected_sort = None;
+                    let sort_rect = ui
+                        .scope(|ui| {
+                            let widgets = &mut ui.visuals_mut().widgets;
+                            widgets.inactive.bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            let border =
+                                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61));
+                            widgets.inactive.bg_stroke = border;
+                            widgets.hovered.bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.hovered.bg_stroke = border;
+                            widgets.active.bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.active.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.active.bg_stroke = border;
+                            widgets.open.bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.open.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                            widgets.open.bg_stroke = border;
+                            ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
+                            egui::ComboBox::from_id_salt("album-sort")
+                                .selected_text(
+                                    egui::RichText::new(active_sort.label())
+                                        .size(13.0)
+                                        .color(egui::Color32::from_rgb(221, 225, 236)),
+                                )
+                                .width(140.0)
+                                .show_ui(ui, |ui| {
+                                    for sort in AlbumSort::ALL {
+                                        if ui
+                                            .selectable_label(active_sort == sort, sort.label())
+                                            .clicked()
+                                        {
+                                            selected_sort = Some(sort);
+                                            ui.close_menu();
+                                        }
+                                    }
+                                })
+                                .response
+                                .rect
+                        })
+                        .inner;
+                    if let Some(sort) = selected_sort {
+                        app.album_sort_changed(sort);
+                    }
+                    let direction = app.settings.sort_ascending;
+                    let (allocated_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(34.0, 32.0), egui::Sense::hover());
+                    let rect = egui::Rect::from_center_size(
+                        egui::pos2(allocated_rect.center().x, sort_rect.center().y),
+                        allocated_rect.size(),
+                    );
+                    let response = ui.interact(
+                        rect,
+                        ui.id().with("album-sort-direction"),
+                        egui::Sense::click(),
+                    );
                     if response.hovered() {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_gray(190)
-                    },
-                );
-                if response
-                    .on_hover_text(if direction { "Ascending" } else { "Descending" })
-                    .clicked()
-                {
-                    app.toggle_sort_direction();
-                }
-            });
+                        ui.painter()
+                            .rect_filled(rect, 6.0, egui::Color32::from_rgb(35, 39, 50));
+                    }
+                    icons::draw(
+                        ui.painter(),
+                        rect.shrink(7.0),
+                        if direction {
+                            Icon::SortAscending
+                        } else {
+                            Icon::SortDescending
+                        },
+                        if response.hovered() {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_gray(190)
+                        },
+                    );
+                    if response
+                        .on_hover_text(if direction { "Ascending" } else { "Descending" })
+                        .clicked()
+                    {
+                        app.toggle_sort_direction();
+                    }
+                },
+            );
         });
 
     let dark = egui::Color32::from_rgb(16, 18, 23);
