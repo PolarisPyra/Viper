@@ -14,6 +14,8 @@ pub enum Icon {
     Search,
     Close,
     Volume,
+    SortAscending,
+    SortDescending,
 }
 
 pub fn button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
@@ -234,6 +236,70 @@ pub fn draw(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::
                 for segment in points.windows(2) {
                     painter.line_segment([segment[0], segment[1]], stroke);
                 }
+            }
+        }
+        Icon::SortAscending => {
+            painter.line_segment(
+                [
+                    center + egui::vec2(-7.0, 5.0),
+                    center + egui::vec2(-7.0, -5.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    center + egui::vec2(-10.0, -2.0),
+                    center + egui::vec2(-7.0, -5.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    center + egui::vec2(-4.0, -2.0),
+                    center + egui::vec2(-7.0, -5.0),
+                ],
+                stroke,
+            );
+            for (y, width) in [(-5.0, 4.0), (0.0, 7.0), (5.0, 10.0)] {
+                painter.line_segment(
+                    [
+                        center + egui::vec2(1.0, y),
+                        center + egui::vec2(1.0 + width, y),
+                    ],
+                    stroke,
+                );
+            }
+        }
+        Icon::SortDescending => {
+            painter.line_segment(
+                [
+                    center + egui::vec2(-7.0, -5.0),
+                    center + egui::vec2(-7.0, 5.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    center + egui::vec2(-10.0, 2.0),
+                    center + egui::vec2(-7.0, 5.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    center + egui::vec2(-4.0, 2.0),
+                    center + egui::vec2(-7.0, 5.0),
+                ],
+                stroke,
+            );
+            for (y, width) in [(-5.0, 10.0), (0.0, 7.0), (5.0, 4.0)] {
+                painter.line_segment(
+                    [
+                        center + egui::vec2(1.0, y),
+                        center + egui::vec2(1.0 + width, y),
+                    ],
+                    stroke,
+                );
             }
         }
     }

@@ -4,7 +4,7 @@ use crate::{
         DiscoveredTracks, Library, ScanProgress,
     },
     playback::Playback,
-    storage::settings::{Settings, StartupView},
+    storage::settings::{AlbumSort, Settings, StartupView},
     views,
     watcher::{FileChange, FileWatcher},
 };
@@ -17,7 +17,7 @@ use std::{
         mpsc::{self, Receiver, TryRecvError},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -35,6 +35,9 @@ pub struct MusicApp {
     filtered_albums: Arc<Vec<usize>>,
     album_filter_dirty: bool,
     pub(crate) page: Page,
+    pub(crate) album_sort_dirty: bool,
+    random_sort_seed: u64,
+    last_observed_track: Option<usize>,
     pub(crate) selected_album: Option<usize>,
     pub(crate) selected_track: Option<usize>,
     pub(crate) scanning: bool,
@@ -87,6 +90,11 @@ impl MusicApp {
             filtered_albums: Arc::new(Vec::new()),
             album_filter_dirty: true,
             page: startup_page,
+            album_sort_dirty: true,
+            random_sort_seed: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_nanos() as u64),
+            last_observed_track: None,
             selected_album: None,
             selected_track: None,
             scanning: false,
@@ -153,6 +161,7 @@ impl MusicApp {
         self.watch_debounce_until = None;
         self.file_watcher = None;
         self.playback.stop();
+        self.last_observed_track = None;
         self.library = Library::default();
         self.texture_epoch = self.texture_epoch.wrapping_add(1);
         self.texture_requests.clear();
@@ -246,6 +255,8 @@ impl MusicApp {
                     let added = merge_discovered_tracks(&mut self.library, discovered);
                     if added > 0 || removed_any {
                         self.album_filter_dirty = true;
+                        self.album_sort_dirty = true;
+                        self.record_new_albums();
                     }
                 }
                 Err(TryRecvError::Disconnected) => {
@@ -316,6 +327,8 @@ impl MusicApp {
                 }
                 self.library = library;
                 self.album_filter_dirty = true;
+                self.album_sort_dirty = true;
+                self.record_new_albums();
                 self.scan_receiver = None;
                 self.scan_cancel = None;
                 self.scanning = false;
@@ -333,9 +346,12 @@ impl MusicApp {
     }
 
     pub(crate) fn filtered_album_indices(&mut self) -> Arc<Vec<usize>> {
-        if self.album_filter_dirty || self.album_filter_query != self.search {
+        if self.album_filter_dirty
+            || self.album_sort_dirty
+            || self.album_filter_query != self.search
+        {
             let query = self.search.to_lowercase();
-            let matches = self
+            let mut matches: Vec<_> = self
                 .library
                 .albums
                 .iter()
@@ -347,11 +363,186 @@ impl MusicApp {
                 })
                 .map(|(index, _)| index)
                 .collect();
+            self.sort_album_indices(&mut matches);
             self.filtered_albums = Arc::new(matches);
             self.album_filter_query.clone_from(&self.search);
             self.album_filter_dirty = false;
+            self.album_sort_dirty = false;
         }
         Arc::clone(&self.filtered_albums)
+    }
+
+    pub(crate) fn album_sort_changed(&mut self, sort: AlbumSort) {
+        if self.settings.album_sort == sort {
+            return;
+        }
+        self.settings.album_sort = sort;
+        if sort == AlbumSort::Random {
+            self.random_sort_seed = self.random_sort_seed.wrapping_add(1);
+        }
+        self.album_sort_dirty = true;
+        self.save_settings();
+    }
+
+    pub(crate) fn toggle_sort_direction(&mut self) {
+        self.settings.sort_ascending = !self.settings.sort_ascending;
+        self.album_sort_dirty = true;
+        self.save_settings();
+    }
+
+    fn save_settings(&mut self) {
+        if let Err(error) = self.settings.save() {
+            self.error = Some(format!("Could not save settings: {error}"));
+        }
+    }
+
+    fn record_new_albums(&mut self) {
+        let now = unix_time_seconds();
+        let mut changed = false;
+        for album in &self.library.albums {
+            let key = album_sort_key(&album.artist, &album.title);
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                self.settings.album_added.entry(key)
+            {
+                entry.insert(now);
+                changed = true;
+            }
+        }
+        if changed {
+            self.save_settings();
+        }
+    }
+
+    fn sort_album_indices(&self, indices: &mut [usize]) {
+        let sort = self.settings.album_sort;
+        let ascending = self.settings.sort_ascending;
+        let albums = &self.library.albums;
+        let tracks = &self.library.tracks;
+        let settings = &self.settings;
+        let seed = self.random_sort_seed;
+        indices.sort_by(|left_index, right_index| {
+            let left = &albums[*left_index];
+            let right = &albums[*right_index];
+            let left_key = album_sort_key(&left.artist, &left.title);
+            let right_key = album_sort_key(&right.artist, &right.title);
+            let order = match sort {
+                AlbumSort::AlbumArtist => {
+                    left.artist.to_lowercase().cmp(&right.artist.to_lowercase())
+                }
+                AlbumSort::Id => left_index.cmp(right_index),
+                AlbumSort::Artist => {
+                    let left_artist = left
+                        .tracks
+                        .first()
+                        .and_then(|index| tracks.get(*index))
+                        .map_or("", |track| track.artist.as_str());
+                    let right_artist = right
+                        .tracks
+                        .first()
+                        .and_then(|index| tracks.get(*index))
+                        .map_or("", |track| track.artist.as_str());
+                    left_artist.to_lowercase().cmp(&right_artist.to_lowercase())
+                }
+                AlbumSort::Duration => {
+                    album_duration(left, tracks).cmp(&album_duration(right, tracks))
+                }
+                AlbumSort::MostPlayed => settings
+                    .album_play_counts
+                    .get(&left_key)
+                    .copied()
+                    .unwrap_or_default()
+                    .cmp(
+                        &settings
+                            .album_play_counts
+                            .get(&right_key)
+                            .copied()
+                            .unwrap_or_default(),
+                    ),
+                AlbumSort::Name => left.title.to_lowercase().cmp(&right.title.to_lowercase()),
+                AlbumSort::Random => {
+                    random_sort_hash(&left_key, seed).cmp(&random_sort_hash(&right_key, seed))
+                }
+                AlbumSort::Rating => settings
+                    .album_ratings
+                    .get(&left_key)
+                    .copied()
+                    .unwrap_or_default()
+                    .cmp(
+                        &settings
+                            .album_ratings
+                            .get(&right_key)
+                            .copied()
+                            .unwrap_or_default(),
+                    ),
+                AlbumSort::RecentlyAdded => settings
+                    .album_added
+                    .get(&left_key)
+                    .copied()
+                    .unwrap_or_default()
+                    .cmp(
+                        &settings
+                            .album_added
+                            .get(&right_key)
+                            .copied()
+                            .unwrap_or_default(),
+                    ),
+                AlbumSort::RecentlyPlayed => settings
+                    .album_last_played
+                    .get(&left_key)
+                    .copied()
+                    .unwrap_or_default()
+                    .cmp(
+                        &settings
+                            .album_last_played
+                            .get(&right_key)
+                            .copied()
+                            .unwrap_or_default(),
+                    ),
+                AlbumSort::SongCount => left.tracks.len().cmp(&right.tracks.len()),
+                AlbumSort::Favorited => settings
+                    .favorite_albums
+                    .contains(&left_key)
+                    .cmp(&settings.favorite_albums.contains(&right_key)),
+                AlbumSort::ReleaseYear => {
+                    album_release_year(left, tracks).cmp(&album_release_year(right, tracks))
+                }
+            };
+            let order = if ascending { order } else { order.reverse() };
+            if order == std::cmp::Ordering::Equal && sort != AlbumSort::Random {
+                left.title
+                    .to_lowercase()
+                    .cmp(&right.title.to_lowercase())
+                    .then_with(|| left_index.cmp(right_index))
+            } else {
+                order
+            }
+        });
+    }
+
+    fn observe_playback_track(&mut self) {
+        if self.last_observed_track == self.playback.current {
+            return;
+        }
+        self.last_observed_track = self.playback.current;
+        let Some(track_index) = self.playback.current else {
+            return;
+        };
+        let Some(album_index) = self.library.track_album.get(track_index).copied() else {
+            return;
+        };
+        let Some(album) = self.library.albums.get(album_index) else {
+            return;
+        };
+        let key = album_sort_key(&album.artist, &album.title);
+        *self
+            .settings
+            .album_play_counts
+            .entry(key.clone())
+            .or_default() += 1;
+        self.settings
+            .album_last_played
+            .insert(key, unix_time_seconds());
+        self.save_settings();
     }
 
     pub(crate) fn album_texture(
@@ -448,6 +639,39 @@ impl MusicApp {
     }
 }
 
+pub(crate) fn album_sort_key(artist: &str, title: &str) -> String {
+    format!("{artist}\0{title}")
+}
+
+fn album_duration(album: &crate::metadata::Album, tracks: &[crate::metadata::Track]) -> u64 {
+    album
+        .tracks
+        .iter()
+        .filter_map(|index| tracks.get(*index).and_then(|track| track.duration_ms))
+        .fold(0, u64::saturating_add)
+}
+
+fn album_release_year(album: &crate::metadata::Album, tracks: &[crate::metadata::Track]) -> u32 {
+    album
+        .tracks
+        .iter()
+        .filter_map(|index| tracks.get(*index).and_then(|track| track.release_year))
+        .min()
+        .unwrap_or_default()
+}
+
+fn random_sort_hash(key: &str, seed: u64) -> u64 {
+    key.bytes().fold(seed ^ 0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
+fn unix_time_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
+}
+
 impl Default for MusicApp {
     fn default() -> Self {
         Self::new()
@@ -500,6 +724,7 @@ impl eframe::App for MusicApp {
             self.playback.advance_if_finished(&self.library.tracks);
             ctx.request_repaint_after(Duration::from_millis(400));
         }
+        self.observe_playback_track();
 
         views::topbar::show(ctx, self);
         views::sidepanel::show(ctx, self);

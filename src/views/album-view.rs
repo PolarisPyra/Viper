@@ -1,7 +1,84 @@
 use crate::app::MusicApp;
+use crate::storage::settings::AlbumSort;
+use crate::views::icons::{self, Icon};
 use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+    egui::TopBottomPanel::top("album-sort-toolbar")
+        .frame(
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(16, 18, 23))
+                .inner_margin(egui::Margin::symmetric(20, 7)),
+        )
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let active_sort = app.settings.album_sort;
+                let mut selected_sort = None;
+                ui.scope(|ui| {
+                    let widgets = &mut ui.visuals_mut().widgets;
+                    widgets.inactive.bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                    widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(27, 31, 41);
+                    widgets.inactive.bg_stroke =
+                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61));
+                    widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
+                    widgets.hovered.bg_stroke =
+                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(54, 59, 74));
+                    widgets.active.bg_fill = egui::Color32::from_rgb(42, 46, 59);
+                    widgets.active.bg_stroke =
+                        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(64, 69, 86));
+                    ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
+                    egui::ComboBox::from_id_salt("album-sort")
+                        .selected_text(
+                            egui::RichText::new(active_sort.label())
+                                .size(13.0)
+                                .color(egui::Color32::from_rgb(221, 225, 236)),
+                        )
+                        .width(140.0)
+                        .show_ui(ui, |ui| {
+                            for sort in AlbumSort::ALL {
+                                if ui
+                                    .selectable_label(active_sort == sort, sort.label())
+                                    .clicked()
+                                {
+                                    selected_sort = Some(sort);
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                });
+                if let Some(sort) = selected_sort {
+                    app.album_sort_changed(sort);
+                }
+                let direction = app.settings.sort_ascending;
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(34.0, 32.0), egui::Sense::click());
+                if response.hovered() {
+                    ui.painter()
+                        .rect_filled(rect, 6.0, egui::Color32::from_rgb(35, 39, 50));
+                }
+                icons::draw(
+                    ui.painter(),
+                    rect.shrink(7.0),
+                    if direction {
+                        Icon::SortAscending
+                    } else {
+                        Icon::SortDescending
+                    },
+                    if response.hovered() {
+                        egui::Color32::WHITE
+                    } else {
+                        egui::Color32::from_gray(190)
+                    },
+                );
+                if response
+                    .on_hover_text(if direction { "Ascending" } else { "Descending" })
+                    .clicked()
+                {
+                    app.toggle_sort_direction();
+                }
+            });
+        });
+
     let dark = egui::Color32::from_rgb(16, 18, 23);
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(dark).inner_margin(0))
@@ -198,11 +275,12 @@ fn show_skeleton_albums(ctx: &egui::Context, ui: &mut egui::Ui, available_width:
 }
 
 fn grid_metrics(available_width: f32) -> (usize, f32, f32, f32, f32) {
-    const EDGE_PADDING: f32 = 12.0;
+    const LEFT_EDGE_PADDING: f32 = 12.0;
+    const RIGHT_EDGE_PADDING: f32 = 18.0;
     const MIN_GAP: f32 = 12.0;
     const BASE_CARD_WIDTH: f32 = 166.0;
     const MIN_COLUMNS: usize = 3;
-    let cards_area = (available_width - EDGE_PADDING * 2.0).max(0.0);
+    let cards_area = (available_width - LEFT_EDGE_PADDING - RIGHT_EDGE_PADDING).max(0.0);
     let natural_columns = ((cards_area + MIN_GAP) / (BASE_CARD_WIDTH + MIN_GAP)).floor() as usize;
     let columns = natural_columns.max(MIN_COLUMNS);
     let card_width = if natural_columns < MIN_COLUMNS {
@@ -216,7 +294,7 @@ fn grid_metrics(available_width: f32) -> (usize, f32, f32, f32, f32) {
     } else {
         MIN_GAP
     };
-    (columns, card_width, art_size, gap, EDGE_PADDING)
+    (columns, card_width, art_size, gap, LEFT_EDGE_PADDING)
 }
 
 pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
@@ -234,9 +312,13 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
     let Some(album) = library.albums.get(album_index) else {
         return;
     };
+    let album_key = crate::app::album_sort_key(&album.artist, &album.title);
+    let panel_width = app.settings.right_panel_width;
+    let settings = &mut app.settings;
+    let mut settings_changed = false;
     let output = egui::SidePanel::right("album-tracklist-side-panel")
         .resizable(true)
-        .default_width(app.settings.right_panel_width)
+        .default_width(panel_width)
         .width_range(260.0..=520.0)
         .frame(
             egui::Frame::new()
@@ -337,6 +419,40 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                 )
                                 .truncate(),
                             );
+                            ui.horizontal(|ui| {
+                                let is_favorite = settings.favorite_albums.contains(&album_key);
+                                if ui
+                                    .small_button(if is_favorite { "♥" } else { "♡" })
+                                    .on_hover_text(if is_favorite {
+                                        "Remove from favorites"
+                                    } else {
+                                        "Add to favorites"
+                                    })
+                                    .clicked()
+                                {
+                                    if is_favorite {
+                                        settings.favorite_albums.remove(&album_key);
+                                    } else {
+                                        settings.favorite_albums.insert(album_key.clone());
+                                    }
+                                    settings_changed = true;
+                                }
+                                let rating = settings
+                                    .album_ratings
+                                    .get(&album_key)
+                                    .copied()
+                                    .unwrap_or_default();
+                                for value in 1..=5 {
+                                    if ui
+                                        .small_button(if value <= rating { "★" } else { "☆" })
+                                        .on_hover_text(format!("Rate {value} out of 5"))
+                                        .clicked()
+                                    {
+                                        settings.album_ratings.insert(album_key.clone(), value);
+                                        settings_changed = true;
+                                    }
+                                }
+                            });
                         });
                     });
 
@@ -459,6 +575,12 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                         });
                 });
         });
+    if settings_changed {
+        app.album_sort_dirty = true;
+        if let Err(error) = app.settings.save() {
+            app.error = Some(format!("Could not save settings: {error}"));
+        }
+    }
     let width = output.response.rect.width();
     let resizing = ctx.input(|input| input.pointer.primary_down());
     if !resizing && (width - app.settings.right_panel_width).abs() > 0.5 {

@@ -33,6 +33,7 @@ pub struct Track {
     pub disc_number: Option<u32>,
     pub track_number: Option<u32>,
     pub duration_ms: Option<u64>,
+    pub release_year: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -455,6 +456,7 @@ fn scan_track(path: PathBuf) -> Track {
         disc_number,
         track_number,
         duration_ms,
+        release_year,
     ) = read_metadata(&path);
     Track {
         path,
@@ -465,6 +467,7 @@ fn scan_track(path: PathBuf) -> Track {
         disc_number,
         track_number,
         duration_ms,
+        release_year,
     }
 }
 
@@ -478,6 +481,7 @@ fn read_metadata(
     Option<u32>,
     Option<u32>,
     Option<u64>,
+    Option<u32>,
 ) {
     if let Ok(file) = lofty::read_from_path(path) {
         let duration_ms = {
@@ -500,9 +504,10 @@ fn read_metadata(
                 number(ItemKey::DiscNumber),
                 number(ItemKey::TrackNumber),
                 duration_ms,
+                text(ItemKey::RecordingDate).and_then(|date| date.get(..4)?.parse::<u32>().ok()),
             )
         } else {
-            (None, None, None, None, None, None, duration_ms)
+            (None, None, None, None, None, None, duration_ms, None)
         };
         return values;
     }
@@ -512,17 +517,17 @@ fn read_metadata(
             "-v",
             "quiet",
             "-show_entries",
-            "format=duration:format_tags=title,artist,album,album_artist,albumartist,track,tracknumber,disc,discnumber",
+            "format=duration:format_tags=title,artist,album,album_artist,albumartist,track,tracknumber,disc,discnumber,date,year",
             "-of",
             "json",
         ])
         .arg(path)
         .output()
     else {
-        return (None, None, None, None, None, None, None);
+        return (None, None, None, None, None, None, None, None);
     };
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-        return (None, None, None, None, None, None, None);
+        return (None, None, None, None, None, None, None, None);
     };
     let tags = json.get("format").and_then(|format| format.get("tags"));
     let lookup = |key: &str| {
@@ -550,6 +555,9 @@ fn read_metadata(
             .and_then(serde_json::Value::as_str)
             .and_then(|duration| duration.parse::<f64>().ok())
             .map(|seconds| (seconds.max(0.0) * 1000.0) as u64),
+        lookup("date")
+            .or_else(|| lookup("year"))
+            .and_then(|date| date.get(..4)?.parse::<u32>().ok()),
     )
 }
 

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     io::{self, ErrorKind},
     path::PathBuf,
@@ -13,6 +14,61 @@ pub enum StartupView {
     Albums,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlbumSort {
+    AlbumArtist,
+    Id,
+    Artist,
+    Duration,
+    MostPlayed,
+    #[default]
+    Name,
+    Random,
+    Rating,
+    RecentlyAdded,
+    RecentlyPlayed,
+    SongCount,
+    Favorited,
+    ReleaseYear,
+}
+
+impl AlbumSort {
+    pub const ALL: [Self; 13] = [
+        Self::AlbumArtist,
+        Self::Id,
+        Self::Artist,
+        Self::Duration,
+        Self::MostPlayed,
+        Self::Name,
+        Self::Random,
+        Self::Rating,
+        Self::RecentlyAdded,
+        Self::RecentlyPlayed,
+        Self::SongCount,
+        Self::Favorited,
+        Self::ReleaseYear,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::AlbumArtist => "Album Artist",
+            Self::Id => "ID",
+            Self::Artist => "Artist",
+            Self::Duration => "Duration",
+            Self::MostPlayed => "Most played",
+            Self::Name => "Name",
+            Self::Random => "Random",
+            Self::Rating => "Rating",
+            Self::RecentlyAdded => "Recently added",
+            Self::RecentlyPlayed => "Recently played",
+            Self::SongCount => "Song count",
+            Self::Favorited => "Favorited",
+            Self::ReleaseYear => "Release year",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Settings {
@@ -21,6 +77,13 @@ pub struct Settings {
     pub left_panel_width: f32,
     pub right_panel_width: f32,
     pub volume: u8,
+    pub album_sort: AlbumSort,
+    pub sort_ascending: bool,
+    pub favorite_albums: BTreeSet<String>,
+    pub album_ratings: BTreeMap<String, u8>,
+    pub album_play_counts: BTreeMap<String, u64>,
+    pub album_last_played: BTreeMap<String, u64>,
+    pub album_added: BTreeMap<String, u64>,
 }
 
 impl Default for Settings {
@@ -31,6 +94,13 @@ impl Default for Settings {
             left_panel_width: 240.0,
             right_panel_width: 320.0,
             volume: 70,
+            album_sort: AlbumSort::Name,
+            sort_ascending: true,
+            favorite_albums: BTreeSet::new(),
+            album_ratings: BTreeMap::new(),
+            album_play_counts: BTreeMap::new(),
+            album_last_played: BTreeMap::new(),
+            album_added: BTreeMap::new(),
         }
     }
 }
@@ -58,6 +128,7 @@ impl Settings {
                     Err(previous_error) => Err(previous_error),
                 }
             }
+
             Err(error) => Err(error),
         }
     }
