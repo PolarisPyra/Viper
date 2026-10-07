@@ -154,47 +154,46 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
         )
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new(match app.page {
-                            Page::Home => "Home",
-                            Page::Albums => "Albums",
-                        })
-                        .size(28.0)
-                        .strong()
-                        .color(egui::Color32::WHITE),
+                ui.label(
+                    egui::RichText::new(match app.page {
+                        Page::Home => "Home",
+                        Page::Albums => "Albums",
+                    })
+                    .size(28.0)
+                    .strong()
+                    .color(egui::Color32::WHITE),
+                );
+                if app.scanning {
+                    let completed = app
+                        .scan_progress
+                        .completed
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let total = app
+                        .scan_progress
+                        .total
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let phase = app
+                        .scan_progress
+                        .phase
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let label = match phase {
+                        0 => "Finding audio files…".to_owned(),
+                        1 => format!("Reading track tags · {completed}/{total}"),
+                        _ => format!("Loading album artwork · {completed}/{total}"),
+                    };
+                    let fraction = if total == 0 {
+                        0.0
+                    } else {
+                        completed as f32 / total as f32
+                    };
+                    let progress_width = (ui.available_width() - 288.0).clamp(120.0, 270.0);
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(progress_width)
+                            .text(label)
+                            .animate(true),
                     );
-                    if app.scanning {
-                        let completed = app
-                            .scan_progress
-                            .completed
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let total = app
-                            .scan_progress
-                            .total
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let phase = app
-                            .scan_progress
-                            .phase
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let label = match phase {
-                            0 => "Finding audio files…".to_owned(),
-                            1 => format!("Reading track tags · {completed}/{total}"),
-                            _ => format!("Loading album artwork · {completed}/{total}"),
-                        };
-                        let fraction = if total == 0 {
-                            0.0
-                        } else {
-                            completed as f32 / total as f32
-                        };
-                        ui.add(
-                            egui::ProgressBar::new(fraction)
-                                .desired_width(270.0)
-                                .text(label)
-                                .animate(true),
-                        );
-                    }
-                });
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::Frame::new()
                         .fill(egui::Color32::from_rgb(27, 31, 41))

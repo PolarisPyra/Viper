@@ -39,7 +39,6 @@ pub struct MusicApp {
     pub(crate) selected_track: Option<usize>,
     pub(crate) scanning: bool,
     pub(crate) error: Option<String>,
-    pub(crate) show_folder_dialog: bool,
     pub(crate) show_settings: bool,
     pub(crate) show_album_details: bool,
     textures: HashMap<usize, egui::TextureHandle>,
@@ -92,7 +91,6 @@ impl MusicApp {
             selected_track: None,
             scanning: false,
             error: settings_error,
-            show_folder_dialog: saved_path.is_none(),
             show_settings: false,
             show_album_details: false,
             textures: HashMap::new(),
@@ -465,14 +463,13 @@ impl eframe::App for MusicApp {
             style.spacing.scroll.interact_background_opacity = 0.0;
         });
         ctx.style_mut(|style| style.interaction.selectable_labels = false);
-        let popup_active = self.show_album_details || self.show_folder_dialog || self.show_settings;
+        let popup_active = self.show_album_details || self.show_settings;
         let escape_pressed = popup_active
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if escape_pressed {
             if self.show_album_details {
                 self.show_album_details = false;
             } else {
-                self.show_folder_dialog = false;
                 self.show_settings = false;
             }
         }
@@ -514,7 +511,6 @@ impl eframe::App for MusicApp {
                 views::album_view::show(ctx, self);
             }
         }
-        views::dialogs::show_startup(ctx, self);
         views::dialogs::show_settings(ctx, self);
     }
 }

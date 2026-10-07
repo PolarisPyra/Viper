@@ -138,7 +138,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 egui::Color32::from_gray(175),
             );
             let volume_track_area = egui::Rect::from_min_max(
-                volume_area.min + egui::vec2(27.0, 0.0),
+                volume_area.min + egui::vec2(30.0, 0.0),
                 volume_area.max - egui::vec2(46.0, 0.0),
             );
             let volume_response = ui.interact(
