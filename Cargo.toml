@@ -1,0 +1,22 @@
+[package]
+name = "musicplayer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.31"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+lofty = "0.25.1"
+rayon = "1.12.0"
+font-kit = "0.14.3"
+notify = "8.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

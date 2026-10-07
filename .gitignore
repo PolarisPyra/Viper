@@ -1,0 +1,16 @@
+
+# Compiled files, backups, debug data, and logs (e.g., target/, *.rs.bk, *.pdb, mutants.out/, rustc-ice-*.txt)
+target/
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+rustc-ice-*.txt
+
+# Optional additions for IDEs and OS files (.idea/, .vscode/, .DS_Store, Thumbs.db)
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Cargo.lock rule (uncomment for libraries)
+# Cargo.lock
