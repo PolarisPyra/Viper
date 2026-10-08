@@ -18,8 +18,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-#[path = "scanner.rs"]
-mod scanner;
+#[path = "library_loader.rs"]
+mod library_loader;
+#[path = "library_watcher.rs"]
+mod library_watcher;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {

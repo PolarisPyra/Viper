@@ -1,4 +1,6 @@
-mod application;
+mod initialization;
+mod shell;
 
-pub use application::MusicApp;
-pub(crate) use application::Page;
+pub use initialization::run;
+pub use shell::MusicApp;
+pub(crate) use shell::Page;

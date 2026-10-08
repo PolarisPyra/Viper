@@ -40,9 +40,9 @@ The app can then be launched from the desktop environment's application menu.
 
 ## Project layout
 
-- `src/main.rs` starts the application; `src/lib.rs` exposes modules and configures the native window and icon.
-- `src/app/` coordinates application state and app-level scan lifecycle in `scanner.rs`.
+- `src/main.rs` starts the application; `src/app/initialization.rs` configures fonts and the native window, then creates `MusicApp`.
+- `src/app/` coordinates application state and initial library loading in `library_loader.rs` and filesystem updates in `library_watcher.rs`.
 - `src/views/home.rs` and `src/views/album_grid.rs` render the Home and Albums pages; album details and track rows live under `src/components/`.
-- `src/library/` owns models, `sorting`, `analyzer`, `modifications`, audio-file helpers, tag reading, metadata caching, and folder watching.
+- `src/library/` owns models, `sorting`, `scanner`, `modifications`, audio-file helpers, tag reading, metadata caching, and folder watching.
 - `src/artwork/` scans for and prepares cover art in `scanner.rs`, and manages decoded artwork textures in `cache.rs`.
 - `src/playback/player.rs` handles Rodio playback with Symphonia decoding; `src/storage/` stores settings and metadata cache records in SQLite.
