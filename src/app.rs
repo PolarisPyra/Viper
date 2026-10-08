@@ -44,6 +44,7 @@ pub struct MusicApp {
     pub(crate) error: Option<String>,
     pub(crate) show_settings: bool,
     pub(crate) show_album_details: bool,
+    pub(crate) settings_category: Option<crate::views::settings::Category>,
     textures: HashMap<usize, egui::TextureHandle>,
     texture_lru: VecDeque<usize>,
     visible_texture_indices: HashSet<usize>,
@@ -101,6 +102,7 @@ impl MusicApp {
             error: settings_error,
             show_settings: false,
             show_album_details: false,
+            settings_category: None,
             textures: HashMap::new(),
             texture_lru: VecDeque::new(),
             visible_texture_indices: HashSet::new(),
@@ -687,17 +689,21 @@ impl eframe::App for MusicApp {
             style.spacing.scroll.interact_background_opacity = 0.0;
         });
         ctx.style_mut(|style| style.interaction.selectable_labels = false);
-        let popup_active = self.show_album_details || self.show_settings;
-        let escape_pressed = popup_active
+        let escape_pressed = !self.show_settings
+            && self.show_album_details
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if escape_pressed {
-            if self.show_album_details {
-                self.show_album_details = false;
-            } else {
-                self.show_settings = false;
+            self.show_album_details = false;
+        }
+        // Always show sidebar when album details or settings are closed
+        if !self.show_album_details && !self.show_settings && self.settings.left_panel_hidden {
+            self.settings.left_panel_hidden = false;
+            if let Err(error) = self.settings.save() {
+                self.error = Some(format!("Could not save settings: {error}"));
             }
         }
-        let space_pressed = !ctx.wants_keyboard_input()
+        let space_pressed = !self.show_settings
+            && !ctx.wants_keyboard_input()
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Space));
         if space_pressed {
             if self.playback.current.is_some() {
@@ -730,7 +736,7 @@ impl eframe::App for MusicApp {
         views::sidepanel::show(ctx, self);
         views::scrubber_controls::show(ctx, self);
         match self.page {
-            Page::Home => views::home::show(ctx),
+            Page::Home => views::home::show(ctx, self),
             Page::Albums => {
                 views::album_view::show_details(ctx, self);
                 views::album_view::show(ctx, self);

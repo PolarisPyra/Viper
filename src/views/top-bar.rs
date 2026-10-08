@@ -55,10 +55,12 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
                                 ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
-                                if ui.button("Choose Music Folder").clicked() {
-                                    ui.close_menu();
-                                    app.choose_folder();
-                                }
+                                ui.menu_button("Add Library", |ui| {
+                                    if ui.button("Choose Music Folder").clicked() {
+                                        ui.close_menu();
+                                        app.choose_folder();
+                                    }
+                                });
                             },
                         );
                         ui.menu_button(
@@ -101,10 +103,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                     ui.close_menu();
                                 }
                                 if ui
-                                    .add_enabled(
-                                        has_current_track,
-                                        egui::Button::new("Next Track"),
-                                    )
+                                    .add_enabled(has_current_track, egui::Button::new("Next Track"))
                                     .clicked()
                                 {
                                     app.playback.skip_next(&app.library.tracks);

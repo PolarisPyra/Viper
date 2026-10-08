@@ -11,9 +11,15 @@ const MUTED: egui::Color32 = egui::Color32::from_rgb(130, 137, 153);
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+    let panel_width = if app.settings.left_panel_hidden {
+        0.0
+    } else {
+        app.settings.left_panel_width
+    };
+
     let output = egui::SidePanel::left("library-sidebar")
         .resizable(true)
-        .default_width(app.settings.left_panel_width)
+        .default_width(panel_width)
         .width_range(170.0..=360.0)
         .frame(
             egui::Frame::new()
@@ -81,10 +87,22 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                     });
                 });
         });
-    let width = output.response.rect.width();
-    let resizing = ctx.input(|input| input.pointer.primary_down());
-    if !resizing && (width - app.settings.left_panel_width).abs() > 0.5 {
-        app.settings.left_panel_width = width;
+
+    // Only save width if panel is not hidden
+    if !app.settings.left_panel_hidden {
+        let width = output.response.rect.width();
+        let resizing = ctx.input(|input| input.pointer.primary_down());
+        if !resizing && (width - app.settings.left_panel_width).abs() > 0.5 {
+            app.settings.left_panel_width = width;
+            if let Err(error) = app.settings.save() {
+                app.error = Some(format!("Could not save settings: {error}"));
+            }
+        }
+    }
+
+    // If album details were closed and panel was hidden, show it again
+    if app.settings.left_panel_hidden && !app.show_album_details {
+        app.settings.left_panel_hidden = false;
         if let Err(error) = app.settings.save() {
             app.error = Some(format!("Could not save settings: {error}"));
         }

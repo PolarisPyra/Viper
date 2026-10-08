@@ -250,6 +250,7 @@ fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut MusicApp) {
                         } else if !already_selected {
                             app.selected_track = None;
                             app.selected_album = Some(album_index);
+                            app.show_album_details = true;
                         }
                     }
                     if card.double_clicked() {
@@ -340,13 +341,18 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
         return;
     };
     let album_key = crate::app::album_sort_key(&album.artist, &album.title);
-    let panel_width = app.settings.right_panel_width;
+    const MIN_PANEL_WIDTH: f32 = 260.0;
+    const MAX_PANEL_WIDTH: f32 = 520.0;
+    let panel_width = app
+        .settings
+        .right_panel_width
+        .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
     let settings = &mut app.settings;
     let mut settings_changed = false;
     let output = egui::SidePanel::right("album-tracklist-side-panel")
         .resizable(true)
+        .width_range(MIN_PANEL_WIDTH..=MAX_PANEL_WIDTH)
         .default_width(panel_width)
-        .width_range(260.0..=520.0)
         .frame(
             egui::Frame::new()
                 .fill(egui::Color32::from_rgb(20, 23, 31))
@@ -430,26 +436,51 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                         }
                         ui.vertical(|ui| {
                             ui.add_space(12.0);
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(&album.title)
-                                        .size(18.0)
-                                        .color(egui::Color32::WHITE),
-                                )
-                                .truncate(),
-                            );
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(&album.artist)
-                                        .size(13.0)
-                                        .color(egui::Color32::from_gray(155)),
-                                )
-                                .truncate(),
-                            );
+                            ui.set_width(ui.available_width());
+                            let is_favorite = settings.favorite_albums.contains(&album_key);
                             ui.horizontal(|ui| {
-                                let is_favorite = settings.favorite_albums.contains(&album_key);
-                                if ui
-                                    .small_button(if is_favorite { "♥" } else { "♡" })
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let title_font = egui::FontId::proportional(18.0);
+                                let title_text_width = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        album.title.clone(),
+                                        title_font.clone(),
+                                        egui::Color32::WHITE,
+                                    )
+                                    .size()
+                                    .x;
+                                let title_width =
+                                    title_text_width.min((ui.available_width() - 26.0).max(0.0));
+                                ui.add_sized(
+                                    egui::vec2(title_width, 25.0),
+                                    egui::Label::new(
+                                        egui::RichText::new(&album.title)
+                                            .size(18.0)
+                                            .color(egui::Color32::WHITE),
+                                    )
+                                    .halign(egui::Align::Min)
+                                    .truncate(),
+                                );
+                                let (rect, response) = ui.allocate_exact_size(
+                                    egui::vec2(22.0, 24.0),
+                                    egui::Sense::click(),
+                                );
+                                crate::views::icons::draw(
+                                    ui.painter(),
+                                    rect.shrink(2.0),
+                                    if is_favorite {
+                                        Icon::HeartFilled
+                                    } else {
+                                        Icon::Heart
+                                    },
+                                    if is_favorite {
+                                        egui::Color32::from_rgb(242, 83, 103)
+                                    } else {
+                                        egui::Color32::from_rgb(151, 105, 112)
+                                    },
+                                );
+                                if response
                                     .on_hover_text(if is_favorite {
                                         "Remove from favorites"
                                     } else {
@@ -464,18 +495,55 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                     }
                                     settings_changed = true;
                                 }
-                                let rating = settings
-                                    .album_ratings
-                                    .get(&album_key)
-                                    .copied()
-                                    .unwrap_or_default();
+                            });
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&album.artist)
+                                        .size(13.0)
+                                        .color(egui::Color32::from_gray(155)),
+                                )
+                                .truncate(),
+                            );
+                            ui.add_space(3.0);
+
+                            let rating = settings
+                                .album_ratings
+                                .get(&album_key)
+                                .copied()
+                                .unwrap_or_default();
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 1.0;
                                 for value in 1..=5 {
-                                    if ui
-                                        .small_button(if value <= rating { "★" } else { "☆" })
-                                        .on_hover_text(format!("Rate {value} out of 5"))
-                                        .clicked()
-                                    {
-                                        settings.album_ratings.insert(album_key.clone(), value);
+                                    let (rect, response) = ui.allocate_exact_size(
+                                        egui::vec2(22.0, 24.0),
+                                        egui::Sense::click(),
+                                    );
+                                    crate::views::icons::draw(
+                                        ui.painter(),
+                                        rect.shrink(2.0),
+                                        if value <= rating {
+                                            Icon::StarFilled
+                                        } else {
+                                            Icon::Star
+                                        },
+                                        if value <= rating {
+                                            egui::Color32::from_rgb(255, 196, 74)
+                                        } else {
+                                            egui::Color32::from_rgb(116, 110, 94)
+                                        },
+                                    );
+                                    let clear_rating = value == rating;
+                                    let tooltip = if clear_rating {
+                                        "Clear rating".to_owned()
+                                    } else {
+                                        format!("Rate {value} out of 5")
+                                    };
+                                    if response.on_hover_text(tooltip).clicked() {
+                                        if clear_rating {
+                                            settings.album_ratings.remove(&album_key);
+                                        } else {
+                                            settings.album_ratings.insert(album_key.clone(), value);
+                                        }
                                         settings_changed = true;
                                     }
                                 }
@@ -608,9 +676,16 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
             app.error = Some(format!("Could not save settings: {error}"));
         }
     }
-    let width = output.response.rect.width();
-    let resizing = ctx.input(|input| input.pointer.primary_down());
-    if !resizing && (width - app.settings.right_panel_width).abs() > 0.5 {
+    let resize_id = egui::Id::new("album-tracklist-side-panel").with("__resize");
+    let resize_finished = ctx
+        .read_response(resize_id)
+        .is_some_and(|response| response.drag_stopped_by(egui::PointerButton::Primary));
+    if resize_finished {
+        let width = output
+            .response
+            .rect
+            .width()
+            .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
         app.settings.right_panel_width = width;
         if let Err(error) = app.settings.save() {
             app.error = Some(format!("Could not save settings: {error}"));

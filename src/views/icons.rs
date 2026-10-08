@@ -16,6 +16,10 @@ pub enum Icon {
     Volume,
     SortAscending,
     SortDescending,
+    Heart,
+    HeartFilled,
+    Star,
+    StarFilled,
 }
 
 pub fn button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
@@ -33,42 +37,8 @@ pub fn draw(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::
     let center = rect.center();
     let stroke = egui::Stroke::new(1.8_f32, color);
     match icon {
-        Icon::Previous => {
-            painter.line_segment(
-                [
-                    center + egui::vec2(-8.0, -7.0),
-                    center + egui::vec2(-8.0, 7.0),
-                ],
-                stroke,
-            );
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    center + egui::vec2(6.0, -7.0),
-                    center + egui::vec2(-5.0, 0.0),
-                    center + egui::vec2(6.0, 7.0),
-                ],
-                color,
-                egui::Stroke::NONE,
-            ));
-        }
-        Icon::Next => {
-            painter.line_segment(
-                [
-                    center + egui::vec2(8.0, -7.0),
-                    center + egui::vec2(8.0, 7.0),
-                ],
-                stroke,
-            );
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    center + egui::vec2(-6.0, -7.0),
-                    center + egui::vec2(5.0, 0.0),
-                    center + egui::vec2(-6.0, 7.0),
-                ],
-                color,
-                egui::Stroke::NONE,
-            ));
-        }
+        Icon::Previous => draw_skip(painter, center, color, stroke, true),
+        Icon::Next => draw_skip(painter, center, color, stroke, false),
         Icon::Stop => {
             painter.rect_stroke(
                 rect.shrink2(egui::vec2(11.0, 10.0)),
@@ -238,69 +208,81 @@ pub fn draw(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::
                 }
             }
         }
-        Icon::SortAscending => {
-            painter.line_segment(
-                [
-                    center + egui::vec2(-7.0, 5.0),
-                    center + egui::vec2(-7.0, -5.0),
-                ],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-10.0, -2.0),
-                    center + egui::vec2(-7.0, -5.0),
-                ],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-4.0, -2.0),
-                    center + egui::vec2(-7.0, -5.0),
-                ],
-                stroke,
-            );
-            for (y, width) in [(-5.0, 4.0), (0.0, 7.0), (5.0, 10.0)] {
-                painter.line_segment(
-                    [
-                        center + egui::vec2(1.0, y),
-                        center + egui::vec2(1.0 + width, y),
-                    ],
-                    stroke,
-                );
-            }
-        }
-        Icon::SortDescending => {
-            painter.line_segment(
-                [
-                    center + egui::vec2(-7.0, -5.0),
-                    center + egui::vec2(-7.0, 5.0),
-                ],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-10.0, 2.0),
-                    center + egui::vec2(-7.0, 5.0),
-                ],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-4.0, 2.0),
-                    center + egui::vec2(-7.0, 5.0),
-                ],
-                stroke,
-            );
-            for (y, width) in [(-5.0, 10.0), (0.0, 7.0), (5.0, 4.0)] {
-                painter.line_segment(
-                    [
-                        center + egui::vec2(1.0, y),
-                        center + egui::vec2(1.0 + width, y),
-                    ],
-                    stroke,
-                );
-            }
-        }
+        Icon::SortAscending => draw_sort(painter, center, stroke, true),
+        Icon::SortDescending => draw_sort(painter, center, stroke, false),
+        Icon::Heart => draw_glyph(painter, center, "♡", 16.0, color),
+        Icon::HeartFilled => draw_glyph(painter, center, "♥", 20.0, color),
+        Icon::Star => draw_glyph(painter, center, "☆", 21.0, color),
+        Icon::StarFilled => draw_glyph(painter, center, "★", 18.0, color),
+    }
+}
+
+fn draw_glyph(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    glyph: &str,
+    size: f32,
+    color: egui::Color32,
+) {
+    painter.text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        glyph,
+        egui::FontId::proportional(size),
+        color,
+    );
+}
+
+fn draw_skip(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    color: egui::Color32,
+    stroke: egui::Stroke,
+    previous: bool,
+) {
+    let direction = if previous { 1.0 } else { -1.0 };
+    let bar_x = -direction * 8.0;
+    painter.line_segment(
+        [
+            center + egui::vec2(bar_x, -7.0),
+            center + egui::vec2(bar_x, 7.0),
+        ],
+        stroke,
+    );
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            center + egui::vec2(direction * 6.0, -7.0),
+            center + egui::vec2(direction * -5.0, 0.0),
+            center + egui::vec2(direction * 6.0, 7.0),
+        ],
+        color,
+        egui::Stroke::NONE,
+    ));
+}
+
+fn draw_sort(painter: &egui::Painter, center: egui::Pos2, stroke: egui::Stroke, ascending: bool) {
+    let direction = if ascending { -1.0 } else { 1.0 };
+    let arrow_tip = center + egui::vec2(-7.0, direction * 5.0);
+    painter.line_segment(
+        [center + egui::vec2(-7.0, -direction * 5.0), arrow_tip],
+        stroke,
+    );
+    for x in [-10.0, -4.0] {
+        painter.line_segment([center + egui::vec2(x, direction * 2.0), arrow_tip], stroke);
+    }
+
+    let widths = if ascending {
+        [4.0, 7.0, 10.0]
+    } else {
+        [10.0, 7.0, 4.0]
+    };
+    for (y, width) in [-5.0, 0.0, 5.0].into_iter().zip(widths) {
+        painter.line_segment(
+            [
+                center + egui::vec2(1.0, y),
+                center + egui::vec2(1.0 + width, y),
+            ],
+            stroke,
+        );
     }
 }

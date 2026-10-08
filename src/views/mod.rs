@@ -8,3 +8,5 @@ pub mod scrubber_controls;
 pub mod sidepanel;
 #[path = "top-bar.rs"]
 pub mod topbar;
+#[path = "settings/mod.rs"]
+pub mod settings;
