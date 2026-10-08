@@ -243,18 +243,15 @@ fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut MusicApp) {
                     let card = response.response.interact(egui::Sense::click());
                     if card.clicked() {
                         let already_selected = app.selected_album == Some(album_index);
-                        if already_selected {
-                            let album = app.library.albums[album_index].clone();
-                            app.playback.play_album(&album, &app.library.tracks);
-                            app.show_album_details = true;
-                        } else if !already_selected {
+                        if !already_selected {
                             app.selected_track = None;
                             app.selected_album = Some(album_index);
-                            app.show_album_details = true;
+                        } else {
+                            let album = app.library.albums[album_index].clone();
+                            app.playback.play_album(&album, &app.library.tracks);
                         }
-                    }
-                    if card.double_clicked() {
                         app.show_album_details = true;
+                        ctx.request_repaint();
                     }
                 }
             }

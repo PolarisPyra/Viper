@@ -127,6 +127,19 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 row_rect.right_top() + egui::vec2(-176.0, 9.0),
                 egui::vec2(176.0, 30.0),
             );
+            let audio_info = current
+                .and_then(|index| app.library.tracks.get(index).map(|track| (index, track)))
+                .map(|(index, track)| {
+                    let file_type = track
+                        .path
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .unwrap_or("AUDIO")
+                        .to_ascii_uppercase();
+                    (index, file_type, track.audio)
+                });
+            show_audio_chips(ui, controls_rect, volume_area, audio_info.as_ref());
+
             let volume_icon = egui::Rect::from_min_size(
                 volume_area.min + egui::vec2(0.0, 4.0),
                 egui::vec2(22.0, 22.0),
@@ -195,10 +208,8 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             let max_seconds = duration.map_or(0.0, |duration| duration.as_secs_f64());
             let mut percentage_text_left = row_rect.left();
             ui.horizontal(|ui| {
-                let (position_label, _) = ui.allocate_exact_size(
-                    egui::vec2(38.0, 14.0),
-                    egui::Sense::hover(),
-                );
+                let (position_label, _) =
+                    ui.allocate_exact_size(egui::vec2(38.0, 14.0), egui::Sense::hover());
                 ui.painter().text(
                     egui::pos2(position_label.left(), position_label.center().y),
                     egui::Align2::LEFT_CENTER,
@@ -252,10 +263,8 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                     }
                 }
 
-                let (duration_label, _) = ui.allocate_exact_size(
-                    egui::vec2(38.0, 14.0),
-                    egui::Sense::hover(),
-                );
+                let (duration_label, _) =
+                    ui.allocate_exact_size(egui::vec2(38.0, 14.0), egui::Sense::hover());
                 percentage_text_left = duration_label.left();
                 ui.painter().text(
                     egui::pos2(duration_label.left(), duration_label.center().y),
@@ -319,6 +328,77 @@ fn show_track_info(
                 .truncate(),
             );
         });
+    }
+}
+
+fn show_audio_chips(
+    ui: &mut egui::Ui,
+    controls_rect: egui::Rect,
+    volume_area: egui::Rect,
+    audio_info: Option<&(usize, String, crate::metadata::AudioProperties)>,
+) {
+    let Some((track_index, file_type, audio)) = audio_info else {
+        return;
+    };
+    let left = controls_rect.right() + 14.0;
+    let right = volume_area.left() - 10.0;
+    if right <= left {
+        return;
+    }
+
+    let mut details = vec![file_type.clone()];
+    let mut tooltip_details = vec![format!("File type: {file_type}")];
+    if let Some(bitrate) = audio.bitrate_kbps {
+        details.push(format!("{bitrate} kb/s"));
+        tooltip_details.push(format!("Bitrate: {bitrate} kb/s"));
+    }
+    if let (Some(bit_depth), Some(sample_rate)) = (audio.bit_depth, audio.sample_rate_hz) {
+        let sample_rate_khz = sample_rate as f32 / 1000.0;
+        let sample_rate_label = if sample_rate % 1000 == 0 {
+            format!("{}", sample_rate / 1000)
+        } else {
+            format!("{sample_rate_khz:.1}")
+        };
+        details.push(format!("{bit_depth}/{sample_rate_label}"));
+        tooltip_details.push(format!(
+            "{bit_depth}-bit, {sample_rate_khz:.1} kHz sample rate"
+        ));
+    } else if let Some(sample_rate) = audio.sample_rate_hz {
+        let label = format!("{:.1} kHz", sample_rate as f32 / 1000.0);
+        details.push(label.clone());
+        tooltip_details.push(format!("Sample rate: {label}"));
+    } else if let Some(bit_depth) = audio.bit_depth {
+        details.push(format!("{bit_depth}-bit"));
+        tooltip_details.push(format!("Bit depth: {bit_depth}-bit"));
+    }
+
+    let label = details.join("  •  ");
+    let tooltip = tooltip_details.join("\n");
+    let font = egui::FontId::proportional(10.0);
+    let text_color = egui::Color32::from_rgb(194, 199, 211);
+    let galley = ui.painter().layout_no_wrap(label, font, text_color);
+    let chip_width = galley.size().x + 16.0;
+    let available_width = right - left;
+    if chip_width <= available_width {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(right - chip_width, controls_rect.center().y - 11.0),
+            egui::vec2(chip_width, 22.0),
+        );
+        ui.painter().rect(
+            rect,
+            3.0,
+            egui::Color32::from_rgb(31, 35, 45),
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(52, 57, 69)),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter()
+            .galley(rect.center() - galley.size() * 0.5, galley, text_color);
+        ui.interact(
+            rect,
+            ui.id().with(("audio-info-chip", track_index)),
+            egui::Sense::hover(),
+        )
+        .on_hover_text(tooltip);
     }
 }
 

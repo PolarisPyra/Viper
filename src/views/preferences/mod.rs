@@ -1,10 +1,4 @@
-pub mod about;
-pub mod audio;
-pub mod connections;
 pub mod general;
-pub mod services;
-pub mod theme;
-pub mod view;
 
 use crate::app::MusicApp;
 use eframe::egui;
@@ -13,10 +7,9 @@ const PANEL: egui::Color32 = egui::Color32::from_rgb(22, 25, 34);
 const BORDER: egui::Color32 = egui::Color32::from_rgb(51, 57, 72);
 const TEXT: egui::Color32 = egui::Color32::from_rgb(232, 235, 244);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(148, 155, 173);
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(164, 137, 255);
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
-    if !app.show_settings {
+    if !app.show_preferences {
         return;
     }
 
@@ -29,7 +22,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     let content_size = (modal_size - egui::vec2(36.0, 36.0)).max(egui::Vec2::ZERO);
     let mut close_requested = false;
 
-    let response = egui::Modal::new(egui::Id::new("settings-modal"))
+    let response = egui::Modal::new(egui::Id::new("preferences-modal"))
         .frame(
             egui::Frame::new()
                 .fill(PANEL)
@@ -45,13 +38,13 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.label(
-                        egui::RichText::new("Settings")
+                        egui::RichText::new("Preferences")
                             .size(23.0)
                             .strong()
                             .color(TEXT),
                     );
                     ui.label(
-                        egui::RichText::new("Configure your listening experience")
+                        egui::RichText::new("Manage your library and startup experience")
                             .size(12.0)
                             .color(MUTED),
                     );
@@ -70,7 +63,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                         crate::views::icons::Icon::Close,
                         if response.hovered() { TEXT } else { MUTED },
                     );
-                    if response.on_hover_text("Close settings").clicked() {
+                    if response.on_hover_text("Close preferences").clicked() {
                         close_requested = true;
                     }
                 });
@@ -83,28 +76,37 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             ui.add_space(12.0);
 
             egui::ScrollArea::vertical()
-                .id_salt("settings-content")
+                .id_salt("preferences-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    show_category(ui, app);
+                    match app.preferences_category.unwrap_or(Category::General) {
+                        Category::General => general::show(ui, app),
+                        Category::Audio
+                        | Category::Connections
+                        | Category::Theme
+                        | Category::View
+                        | Category::Services
+                        | Category::About => {}
+                    }
                 });
         });
 
     if close_requested || response.should_close() {
-        app.show_settings = false;
+        app.show_preferences = false;
     }
 }
 
 fn category_tabs(ui: &mut egui::Ui, app: &mut MusicApp) {
-    let mut selected = app.settings_category.unwrap_or(Category::General);
+    let mut selected = app.preferences_category.unwrap_or(Category::General);
     egui::ScrollArea::horizontal()
-        .id_salt("settings-category-tabs")
+        .id_salt("preferences-category-tabs")
         .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                for category in Category::all() {
+                for category in Category::ALL {
+                    let is_selected = selected == category;
                     let response = ui
                         .scope(|ui| {
                             let widgets = &mut ui.visuals_mut().widgets;
@@ -112,36 +114,24 @@ fn category_tabs(ui: &mut egui::Ui, app: &mut MusicApp) {
                             widgets.inactive.bg_stroke = egui::Stroke::NONE;
                             widgets.hovered.bg_fill = egui::Color32::from_rgb(37, 40, 53);
                             widgets.hovered.bg_stroke = egui::Stroke::NONE;
-                            widgets.active.bg_fill = egui::Color32::from_rgb(49, 43, 72);
+                            widgets.active.bg_fill = egui::Color32::from_rgb(37, 40, 53);
                             widgets.active.bg_stroke = egui::Stroke::NONE;
-                            ui.spacing_mut().button_padding = egui::vec2(11.0, 6.0);
+                            ui.spacing_mut().button_padding = egui::vec2(11.0, 7.0);
                             ui.selectable_label(
-                                selected == *category,
+                                is_selected,
                                 egui::RichText::new(category.label())
                                     .size(12.0)
-                                    .color(if selected == *category { ACCENT } else { MUTED }),
+                                    .color(if is_selected { TEXT } else { MUTED }),
                             )
                         })
                         .inner;
                     if response.clicked() {
-                        selected = *category;
+                        selected = category;
                     }
                 }
             });
         });
-    app.settings_category = Some(selected);
-}
-
-fn show_category(ui: &mut egui::Ui, app: &mut MusicApp) {
-    match app.settings_category.unwrap_or(Category::General) {
-        Category::General => general::show(ui, app),
-        Category::Audio => audio::show(ui),
-        Category::Connections => connections::show(ui),
-        Category::Theme => theme::show(ui),
-        Category::View => view::show(ui),
-        Category::Services => services::show(ui),
-        Category::About => about::show(ui),
-    }
+    app.preferences_category = Some(selected);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -156,17 +146,15 @@ pub enum Category {
 }
 
 impl Category {
-    fn all() -> &'static [Self] {
-        &[
-            Self::General,
-            Self::Audio,
-            Self::Connections,
-            Self::Theme,
-            Self::View,
-            Self::Services,
-            Self::About,
-        ]
-    }
+    const ALL: [Self; 7] = [
+        Self::General,
+        Self::Audio,
+        Self::Connections,
+        Self::Theme,
+        Self::View,
+        Self::Services,
+        Self::About,
+    ];
 
     fn label(self) -> &'static str {
         match self {

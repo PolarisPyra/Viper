@@ -38,8 +38,8 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
                                 ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
-                                if ui.button("Settings").clicked() {
-                                    app.show_settings = true;
+                                if ui.button("Preferences").clicked() {
+                                    app.show_preferences = true;
                                     ui.close_menu();
                                 }
                                 ui.separator();

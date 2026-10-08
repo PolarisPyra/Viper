@@ -8,6 +8,8 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+const TRACK_METADATA_VERSION: u8 = 1;
+
 #[derive(Default)]
 pub struct TrackMetadataCache {
     entries: BTreeMap<PathBuf, CachedTrack>,
@@ -15,6 +17,8 @@ pub struct TrackMetadataCache {
 
 #[derive(Clone, Deserialize, Serialize)]
 struct CachedTrack {
+    #[serde(default)]
+    metadata_version: u8,
     size: u64,
     modified_secs: u64,
     modified_nanos: u32,
@@ -47,7 +51,8 @@ impl TrackMetadataCache {
     pub fn get(&self, path: &Path, metadata: &fs::Metadata) -> Option<Track> {
         let entry = self.entries.get(path)?;
         let modified = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
-        (entry.size == metadata.len()
+        (entry.metadata_version == TRACK_METADATA_VERSION
+            && entry.size == metadata.len()
             && entry.modified_secs == modified.as_secs()
             && entry.modified_nanos == modified.subsec_nanos())
         .then(|| {
@@ -69,6 +74,7 @@ impl TrackMetadataCache {
         self.entries.insert(
             path,
             CachedTrack {
+                metadata_version: TRACK_METADATA_VERSION,
                 size: metadata.len(),
                 modified_secs: modified.as_secs(),
                 modified_nanos: modified.subsec_nanos(),

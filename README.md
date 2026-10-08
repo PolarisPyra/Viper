@@ -26,7 +26,7 @@ The app opens to the Home view. To select or change the music folder, choose **L
 - Load cover art from neighboring image files or embedded audio artwork; artwork is reduced to a 512 px thumbnail.
 - Scan MP3, FLAC, Ogg, Opus, WAV, M4A, AAC, AIFF, WMA, APE, WavPack, DSF, DFF, and WebM files, subject to FFmpeg codec support.
 
-The Settings window is currently an empty placeholder. Settings data, including the selected folder and volume, is stored at `~/.config/musicplayer/settings.json`.
+Preferences let you choose your music folder and startup page. Preferences data, including the selected folder and volume, is stored at `~/.config/musicplayer/settings.json`.
 
 ## Linux desktop integration
 

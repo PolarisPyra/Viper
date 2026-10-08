@@ -34,6 +34,16 @@ pub struct Track {
     pub track_number: Option<u32>,
     pub duration_ms: Option<u64>,
     pub release_year: Option<u32>,
+    #[serde(default)]
+    pub audio: AudioProperties,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct AudioProperties {
+    pub bitrate_kbps: Option<u32>,
+    pub sample_rate_hz: Option<u32>,
+    pub bit_depth: Option<u8>,
+    pub channels: Option<u8>,
 }
 
 #[derive(Clone)]
@@ -457,6 +467,7 @@ fn scan_track(path: PathBuf) -> Track {
         track_number,
         duration_ms,
         release_year,
+        audio,
     ) = read_metadata(&path);
     Track {
         path,
@@ -468,6 +479,7 @@ fn scan_track(path: PathBuf) -> Track {
         track_number,
         duration_ms,
         release_year,
+        audio,
     }
 }
 
@@ -482,11 +494,19 @@ fn read_metadata(
     Option<u32>,
     Option<u64>,
     Option<u32>,
+    AudioProperties,
 ) {
     if let Ok(file) = lofty::read_from_path(path) {
+        let properties = file.properties();
         let duration_ms = {
-            let millis = file.properties().duration().as_millis() as u64;
+            let millis = properties.duration().as_millis() as u64;
             (millis > 0).then_some(millis)
+        };
+        let audio = AudioProperties {
+            bitrate_kbps: properties.audio_bitrate(),
+            sample_rate_hz: properties.sample_rate(),
+            bit_depth: properties.bit_depth(),
+            channels: properties.channels(),
         };
         let values = if let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) {
             let text = |key| {
@@ -505,9 +525,10 @@ fn read_metadata(
                 number(ItemKey::TrackNumber),
                 duration_ms,
                 text(ItemKey::RecordingDate).and_then(|date| date.get(..4)?.parse::<u32>().ok()),
+                audio,
             )
         } else {
-            (None, None, None, None, None, None, duration_ms, None)
+            (None, None, None, None, None, None, duration_ms, None, audio)
         };
         return values;
     }
@@ -517,19 +538,68 @@ fn read_metadata(
             "-v",
             "quiet",
             "-show_entries",
-            "format=duration:format_tags=title,artist,album,album_artist,albumartist,track,tracknumber,disc,discnumber,date,year",
+            "format=duration,bit_rate:format_tags=title,artist,album,album_artist,albumartist,track,tracknumber,disc,discnumber,date,year:stream=sample_rate,channels,bits_per_sample,bits_per_raw_sample,bit_rate",
             "-of",
             "json",
         ])
         .arg(path)
         .output()
     else {
-        return (None, None, None, None, None, None, None, None);
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            AudioProperties::default(),
+        );
     };
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-        return (None, None, None, None, None, None, None, None);
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            AudioProperties::default(),
+        );
     };
     let tags = json.get("format").and_then(|format| format.get("tags"));
+    let stream = json
+        .get("streams")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|streams| streams.first());
+    let parse_property = |value: Option<&serde_json::Value>| {
+        value.and_then(|value| {
+            value
+                .as_str()
+                .and_then(|text| text.parse().ok())
+                .or_else(|| value.as_u64().and_then(|number| u32::try_from(number).ok()))
+        })
+    };
+    let bitrate_bps = parse_property(
+        stream
+            .and_then(|stream| stream.get("bit_rate"))
+            .or_else(|| json.get("format").and_then(|format| format.get("bit_rate"))),
+    );
+    let audio = AudioProperties {
+        bitrate_kbps: bitrate_bps.map(|bitrate| bitrate / 1000),
+        sample_rate_hz: parse_property(stream.and_then(|stream| stream.get("sample_rate"))),
+        bit_depth: parse_property(
+            stream
+                .and_then(|stream| stream.get("bits_per_raw_sample"))
+                .or_else(|| stream.and_then(|stream| stream.get("bits_per_sample"))),
+        )
+        .and_then(|depth| u8::try_from(depth).ok()),
+        channels: parse_property(stream.and_then(|stream| stream.get("channels")))
+            .and_then(|channels| u8::try_from(channels).ok()),
+    };
     let lookup = |key: &str| {
         tags?
             .as_object()?
@@ -558,6 +628,7 @@ fn read_metadata(
         lookup("date")
             .or_else(|| lookup("year"))
             .and_then(|date| date.get(..4)?.parse::<u32>().ok()),
+        audio,
     )
 }
 

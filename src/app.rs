@@ -42,9 +42,9 @@ pub struct MusicApp {
     pub(crate) selected_track: Option<usize>,
     pub(crate) scanning: bool,
     pub(crate) error: Option<String>,
-    pub(crate) show_settings: bool,
+    pub(crate) show_preferences: bool,
     pub(crate) show_album_details: bool,
-    pub(crate) settings_category: Option<crate::views::settings::Category>,
+    pub(crate) preferences_category: Option<crate::views::preferences::Category>,
     textures: HashMap<usize, egui::TextureHandle>,
     texture_lru: VecDeque<usize>,
     visible_texture_indices: HashSet<usize>,
@@ -100,9 +100,9 @@ impl MusicApp {
             selected_track: None,
             scanning: false,
             error: settings_error,
-            show_settings: false,
+            show_preferences: false,
             show_album_details: false,
-            settings_category: None,
+            preferences_category: None,
             textures: HashMap::new(),
             texture_lru: VecDeque::new(),
             visible_texture_indices: HashSet::new(),
@@ -689,20 +689,20 @@ impl eframe::App for MusicApp {
             style.spacing.scroll.interact_background_opacity = 0.0;
         });
         ctx.style_mut(|style| style.interaction.selectable_labels = false);
-        let escape_pressed = !self.show_settings
+        let escape_pressed = !self.show_preferences
             && self.show_album_details
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if escape_pressed {
             self.show_album_details = false;
         }
-        // Always show sidebar when album details or settings are closed
-        if !self.show_album_details && !self.show_settings && self.settings.left_panel_hidden {
+        // Always show sidebar when album details or preferences are closed
+        if !self.show_album_details && !self.show_preferences && self.settings.left_panel_hidden {
             self.settings.left_panel_hidden = false;
             if let Err(error) = self.settings.save() {
                 self.error = Some(format!("Could not save settings: {error}"));
             }
         }
-        let space_pressed = !self.show_settings
+        let space_pressed = !self.show_preferences
             && !ctx.wants_keyboard_input()
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Space));
         if space_pressed {
@@ -742,7 +742,7 @@ impl eframe::App for MusicApp {
                 views::album_view::show(ctx, self);
             }
         }
-        views::dialogs::show_settings(ctx, self);
+        views::dialogs::show_preferences(ctx, self);
     }
 }
 

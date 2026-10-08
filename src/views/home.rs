@@ -371,6 +371,7 @@ fn album_section(
                         app.selected_album = Some(index);
                         app.show_album_details = true;
                         app.page = Page::Albums;
+                        ctx.request_repaint();
                     }
                 }
             });
