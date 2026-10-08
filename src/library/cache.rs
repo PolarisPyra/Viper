@@ -1,4 +1,4 @@
-use crate::{metadata::Track, storage::settings::Settings};
+use crate::{library::Track, storage::settings::Settings};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,

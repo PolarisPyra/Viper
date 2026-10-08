@@ -57,10 +57,10 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                         ui.painter()
                             .rect_filled(rect, 8.0, egui::Color32::from_rgb(47, 52, 67));
                     }
-                    crate::views::icons::draw(
+                    crate::ui::icons::draw(
                         ui.painter(),
                         rect.shrink(8.0),
-                        crate::views::icons::Icon::Close,
+                        crate::ui::icons::Icon::Close,
                         if response.hovered() { TEXT } else { MUTED },
                     );
                     if response.on_hover_text("Close preferences").clicked() {

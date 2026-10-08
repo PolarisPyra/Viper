@@ -1,6 +1,6 @@
 use crate::app::MusicApp;
 use crate::storage::settings::AlbumSort;
-use crate::views::icons::{self, Icon};
+use crate::ui::icons::{self, Icon};
 use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
@@ -398,10 +398,10 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                 close_rect,
                                 close_response.hovered(),
                             );
-                            crate::views::icons::draw(
+                            crate::ui::icons::draw(
                                 ui.painter(),
                                 close_rect.shrink(2.0),
-                                crate::views::icons::Icon::Close,
+                                crate::ui::icons::Icon::Close,
                                 if close_response.hovered() {
                                     egui::Color32::WHITE
                                 } else {
@@ -469,7 +469,7 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                             egui::vec2(22.0, 24.0),
                                             egui::Sense::click(),
                                         );
-                                        crate::views::icons::draw(
+                                        crate::ui::icons::draw(
                                             ui.painter(),
                                             rect.shrink(2.0),
                                             if value <= rating {
@@ -517,7 +517,7 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                         favorite_rect,
                                         response.hovered(),
                                     );
-                                    crate::views::icons::draw(
+                                    crate::ui::icons::draw(
                                         ui.painter(),
                                         favorite_rect.shrink(2.0),
                                         if is_favorite {
@@ -598,13 +598,13 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                     egui::vec2(20.0, 20.0),
                                 );
                                 if playing {
-                                    crate::views::icons::draw(
+                                    crate::ui::icons::draw(
                                         ui.painter(),
                                         number_or_icon,
                                         if playback.is_playing() {
-                                            crate::views::icons::Icon::Pause
+                                            crate::ui::icons::Icon::Pause
                                         } else {
-                                            crate::views::icons::Icon::Play
+                                            crate::ui::icons::Icon::Play
                                         },
                                         egui::Color32::from_rgb(174, 149, 255),
                                     );

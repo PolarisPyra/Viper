@@ -1,6 +1,6 @@
 use crate::{
     app::MusicApp,
-    views::icons::{self, Icon},
+    ui::icons::{self, Icon},
 };
 use eframe::egui;
 use egui::emath::GuiRounding;
@@ -336,7 +336,7 @@ fn show_audio_chips(
     ui: &mut egui::Ui,
     controls_rect: egui::Rect,
     volume_area: egui::Rect,
-    audio_info: Option<&(usize, String, crate::metadata::AudioProperties)>,
+    audio_info: Option<&(usize, String, crate::library::AudioProperties)>,
 ) {
     let Some((track_index, file_type, audio)) = audio_info else {
         return;

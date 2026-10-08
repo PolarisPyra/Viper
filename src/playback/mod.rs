@@ -1,4 +1,4 @@
-use crate::metadata::{Album, Track};
+use crate::library::{Album, Track};
 use std::{
     collections::VecDeque,
     process::{Child, Command, Stdio},

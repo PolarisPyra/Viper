@@ -1,11 +1,8 @@
-#[path = "album-view.rs"]
 pub mod album_view;
 pub mod dialogs;
 pub mod home;
 pub mod icons;
 pub mod preferences;
-#[path = "scrubber-controls.rs"]
 pub mod scrubber_controls;
 pub mod sidepanel;
-#[path = "top-bar.rs"]
-pub mod topbar;
+pub mod top_bar;

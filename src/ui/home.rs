@@ -1,7 +1,7 @@
 use crate::{
     app::{album_sort_key, MusicApp, Page},
-    metadata::Album,
-    views::icons::{self, Icon},
+    library::Album,
+    ui::icons::{self, Icon},
 };
 use eframe::egui;
 use std::collections::BTreeMap;

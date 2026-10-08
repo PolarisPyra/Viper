@@ -1,7 +1,7 @@
 use crate::{
     app::{MusicApp, Page},
     storage::settings::StartupView,
-    views::icons::{self, Icon},
+    ui::icons::{self, Icon},
 };
 use eframe::egui;
 
