@@ -82,7 +82,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                     .clicked()
                                 {
                                     if has_current_track {
-                                        app.playback.toggle_pause(&app.library.tracks);
+                                        app.playback.toggle_pause();
                                     } else if let Some(album_index) = app.selected_album {
                                         if let Some(album) = app.library.albums.get(album_index) {
                                             app.playback.play_album(album, &app.library.tracks);

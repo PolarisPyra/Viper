@@ -4,6 +4,7 @@ pub mod cache;
 mod model;
 mod modifications;
 pub(crate) mod sorting;
+pub(crate) mod symphonia;
 mod tag_reader;
 pub mod watcher;
 

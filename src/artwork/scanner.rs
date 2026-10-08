@@ -6,7 +6,6 @@ use std::{
     hash::Hasher,
     io::{self, Cursor, ErrorKind},
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
     time::UNIX_EPOCH,
 };
@@ -28,33 +27,28 @@ pub(crate) fn cover_for_track(track: &Track) -> Option<Vec<u8>> {
 
 fn extract_embedded_art(path: &Path) -> Option<Vec<u8>> {
     if let Ok(file) = lofty::read_from_path(path) {
-        return file
+        if let Some(bytes) = file
             .primary_tag()
             .or_else(|| file.first_tag())
             .and_then(|tag| tag.pictures().first())
-            .map(|picture| picture.data().to_vec());
+            .map(|picture| picture.data().to_vec())
+        {
+            return Some(bytes);
+        }
     }
-    let output = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(path)
-        .args([
-            "-map",
-            "0:v:0",
-            "-frames:v",
-            "1",
-            "-f",
-            "image2pipe",
-            "-vcodec",
-            "mjpeg",
-            "pipe:1",
-        ])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then_some(output.stdout)
-        .filter(|bytes| !bytes.is_empty())
+    let media = crate::library::symphonia::probe(path)?;
+    let cover_index = media
+        .visuals
+        .iter()
+        .position(|visual| {
+            visual.usage == Some(symphonia::core::meta::StandardVisualKey::FrontCover)
+        })
+        .unwrap_or(0);
+    media
+        .visuals
+        .into_iter()
+        .nth(cover_index)
+        .map(|visual| visual.data)
 }
 
 fn is_disc_directory(path: &Path) -> bool {

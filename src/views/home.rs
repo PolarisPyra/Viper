@@ -288,7 +288,7 @@ fn show_continue_listening(ui: &mut egui::Ui, app: &mut MusicApp) {
                             "Pause"
                         };
                         if ui.button(label).clicked() {
-                            app.playback.toggle_pause(&app.library.tracks);
+                            app.playback.toggle_pause();
                         }
                     });
                 });

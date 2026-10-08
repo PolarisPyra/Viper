@@ -45,7 +45,7 @@ pub struct MusicApp {
     pub(crate) error: Option<String>,
     pub(crate) show_preferences: bool,
     pub(crate) show_album_details: bool,
-    pub(crate) preferences_category: Option<crate::components::preferences::Category>,
+    pub(crate) preferences_category: Option<crate::views::preferences::Category>,
     artwork_cache: ArtworkCache,
     scan_receiver: Option<Receiver<Library>>,
     scan_cancel: Option<Arc<AtomicBool>>,
@@ -305,7 +305,7 @@ impl eframe::App for MusicApp {
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Space));
         if space_pressed {
             if self.playback.current.is_some() {
-                self.playback.toggle_pause(&self.library.tracks);
+                self.playback.toggle_pause();
             } else if let Some(album_index) = self.selected_album {
                 if let Some(album) = self.library.albums.get(album_index) {
                     self.playback.play_album(album, &self.library.tracks);
@@ -321,20 +321,25 @@ impl eframe::App for MusicApp {
         if self.scanning {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        if self.playback.is_playing() {
+        if self.playback.current.is_some() && !self.playback.is_paused() {
             self.playback.advance_if_finished(&self.library.tracks);
-            ctx.request_repaint_after(Duration::from_millis(400));
+            if self.playback.current.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(400));
+            }
         }
         self.observe_playback_track();
 
-        crate::components::top_bar::show(ctx, self);
+        crate::components::file_menu::show(ctx, self);
+        crate::components::bottom_panel::show(ctx, self);
         crate::components::sidepanel::show(ctx, self);
-        crate::components::scrubber_controls::show(ctx, self);
         match self.page {
-            Page::Home => views::home_view::show(ctx, self),
-            Page::Albums => views::album_view::show(ctx, self),
+            Page::Home => views::home::show(ctx, self),
+            Page::Albums => {
+                crate::components::album_track_list::show(ctx, self);
+                views::album_grid::show(ctx, self);
+            }
         }
-        crate::components::dialogs::show_preferences(ctx, self);
+        crate::views::preferences::show(ctx, self);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

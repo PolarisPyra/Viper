@@ -1,2 +1,3 @@
-pub mod album_view;
-pub mod home_view;
+pub mod album_grid;
+pub mod home;
+pub mod preferences;

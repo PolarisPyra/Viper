@@ -1,9 +1,9 @@
-use crate::{library::Track, storage::settings::Settings};
+use crate::{library::Track, storage::database};
+use rusqlite::{params, types::Type, Row};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
-    io::{BufReader, BufWriter},
+    fs,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -27,25 +27,18 @@ struct CachedTrack {
 
 impl TrackMetadataCache {
     pub fn load() -> Self {
-        let Some(path) = cache_path() else {
-            return Self::default();
+        let mut cache = Self {
+            entries: load_database_entries(),
         };
-        let Ok(file) = File::open(path) else {
-            return Self::default();
-        };
-        let Ok(entries) = serde_json::from_reader::<_, Vec<CachedTrack>>(BufReader::new(file))
-        else {
-            return Self::default();
-        };
-        Self {
-            entries: entries
-                .into_iter()
-                .map(|mut entry| {
-                    let path = std::mem::take(&mut entry.track.path);
-                    (path, entry)
-                })
-                .collect(),
+        if cache.entries.is_empty() {
+            if let Some((path, entries)) = load_legacy_cache() {
+                cache.entries = entries;
+                if cache.persist() {
+                    let _ = fs::remove_file(path);
+                }
+            }
         }
+        cache
     }
 
     pub fn get(&self, path: &Path, metadata: &fs::Metadata) -> Option<Track> {
@@ -62,14 +55,13 @@ impl TrackMetadataCache {
         })
     }
 
-    pub fn insert(&mut self, path: PathBuf, metadata: &fs::Metadata, track: Track) {
+    pub fn insert(&mut self, path: PathBuf, metadata: &fs::Metadata, mut track: Track) {
         let Ok(modified) = metadata.modified().and_then(|time| {
             time.duration_since(UNIX_EPOCH)
                 .map_err(std::io::Error::other)
         }) else {
             return;
         };
-        let mut track = track;
         track.path = PathBuf::new();
         self.entries.insert(
             path,
@@ -84,37 +76,107 @@ impl TrackMetadataCache {
     }
 
     pub fn save(self) {
-        let Some(path) = cache_path() else {
-            return;
+        self.persist();
+    }
+
+    fn persist(&self) -> bool {
+        let Ok(mut connection) = database::open() else {
+            return false;
         };
-        let Some(directory) = path.parent() else {
-            return;
+        let Ok(transaction) = connection.transaction() else {
+            return false;
         };
-        if fs::create_dir_all(directory).is_err() {
-            return;
+        if transaction
+            .execute("DELETE FROM track_metadata", [])
+            .is_err()
+        {
+            return false;
         }
-        let entries: Vec<_> = self
-            .entries
-            .into_iter()
-            .map(|(path, mut entry)| {
-                entry.track.path = path;
-                entry
-            })
-            .collect();
-        let temporary_path = path.with_extension("json.tmp");
-        let Ok(file) = File::create(&temporary_path) else {
-            return;
-        };
-        let mut writer = BufWriter::new(file);
-        if serde_json::to_writer(&mut writer, &entries).is_ok() {
-            drop(writer);
-            let _ = fs::rename(temporary_path, path);
+        for (path, entry) in &self.entries {
+            let Ok(track) = serde_json::to_vec(&entry.track) else {
+                return false;
+            };
+            let result = transaction.execute(
+                "INSERT INTO track_metadata
+                 (path, metadata_version, file_size, modified_secs, modified_nanos, track)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    path.to_string_lossy(),
+                    entry.metadata_version,
+                    i64::try_from(entry.size).unwrap_or(i64::MAX),
+                    i64::try_from(entry.modified_secs).unwrap_or(i64::MAX),
+                    i64::from(entry.modified_nanos),
+                    track,
+                ],
+            );
+            if result.is_err() {
+                return false;
+            }
         }
+        transaction.commit().is_ok()
     }
 }
 
-fn cache_path() -> Option<PathBuf> {
-    Settings::file_path()
-        .ok()
-        .map(|path| path.with_file_name("cached").join("tracks.json"))
+fn load_database_entries() -> BTreeMap<PathBuf, CachedTrack> {
+    let Ok(connection) = database::open() else {
+        return BTreeMap::new();
+    };
+    let Ok(mut statement) = connection.prepare(
+        "SELECT path, metadata_version, file_size, modified_secs, modified_nanos, track
+         FROM track_metadata",
+    ) else {
+        return BTreeMap::new();
+    };
+    let Ok(rows) = statement.query_map([], |row| {
+        let payload: Vec<u8> = row.get(5)?;
+        let track = serde_json::from_slice(&payload).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                payload.len(),
+                rusqlite::types::Type::Blob,
+                Box::new(error),
+            )
+        })?;
+        Ok((
+            PathBuf::from(row.get::<_, String>(0)?),
+            CachedTrack {
+                metadata_version: row.get(1)?,
+                size: read_u64(row, 2)?,
+                modified_secs: read_u64(row, 3)?,
+                modified_nanos: read_u32(row, 4)?,
+                track,
+            },
+        ))
+    }) else {
+        return BTreeMap::new();
+    };
+    rows.filter_map(Result::ok).collect()
+}
+
+fn load_legacy_cache() -> Option<(PathBuf, BTreeMap<PathBuf, CachedTrack>)> {
+    let database_path = crate::storage::settings::Settings::file_path().ok()?;
+    let path = database_path.with_file_name("cached").join("tracks.json");
+    let bytes = fs::read(&path).ok()?;
+    let entries: Vec<CachedTrack> = serde_json::from_slice(&bytes).ok()?;
+    let entries = entries
+        .into_iter()
+        .map(|mut entry| {
+            let path = std::mem::take(&mut entry.track.path);
+            (path, entry)
+        })
+        .collect();
+    Some((path, entries))
+}
+
+fn read_u64(row: &Row<'_>, column: usize) -> rusqlite::Result<u64> {
+    let value = row.get::<_, i64>(column)?;
+    u64::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Integer, Box::new(error))
+    })
+}
+
+fn read_u32(row: &Row<'_>, column: usize) -> rusqlite::Result<u32> {
+    let value = row.get::<_, i64>(column)?;
+    u32::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Integer, Box::new(error))
+    })
 }

@@ -14,6 +14,10 @@ lofty = "0.25.1"
 rayon = "1.12.0"
 font-kit = "0.14.3"
 notify = "8.2"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+rodio = { version = "0.22.2", default-features = false, features = ["playback", "symphonia-all"] }
+symphonia = { version = "0.5.5", features = ["all"] }
+symphonia-adapter-libopus = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

@@ -1,117 +1,40 @@
 use crate::library::{Album, Track};
-use std::{
-    collections::VecDeque,
-    process::{Child, Command, Stdio},
-    time::{Duration, Instant},
-};
+use rodio::{Decoder, MixerDeviceSink, Player};
+use std::{collections::VecDeque, fs::File, time::Duration};
 
 pub struct Playback {
     pub current: Option<usize>,
     pub error: Option<String>,
-    player: Option<Child>,
+    output: Option<MixerDeviceSink>,
+    player: Option<Player>,
     queue: VecDeque<usize>,
     history: VecDeque<usize>,
     position: Duration,
-    started_at: Option<Instant>,
     paused: bool,
     pub volume: u8,
-    sink_input: Option<u32>,
-    mixer_volume_applied: bool,
-    last_sink_lookup: Option<Instant>,
 }
 
 impl Playback {
-    pub fn set_volume(&mut self, tracks: &[Track], volume: u8) {
-        if self.volume == volume {
-            if self.current.is_some() && !self.paused && !self.mixer_volume_applied {
-                let current = self.current;
-                let position = self.position();
-                self.kill_player();
-                if let Some(index) = current {
-                    self.start_track_at(tracks, index, position);
-                }
-            }
-            return;
-        }
-        let current = self.current;
-        let position = self.position();
-        let restart = current.is_some() && !self.paused;
+    pub fn set_volume(&mut self, volume: u8) {
         self.volume = volume;
-        if restart && !self.apply_stream_volume(volume) {
-            self.kill_player();
-            if let Some(index) = current {
-                self.start_track_at(tracks, index, position);
-            }
-        } else if restart {
-            self.mixer_volume_applied = true;
-        }
+        self.apply_volume();
     }
 
-    pub fn preview_volume(&mut self, _tracks: &[Track], volume: u8) {
-        if self.volume == volume && self.mixer_volume_applied {
-            return;
-        }
+    pub fn preview_volume(&mut self, volume: u8) {
         self.volume = volume;
-        if self.current.is_some() && !self.paused {
-            self.mixer_volume_applied = self.apply_stream_volume(volume);
-        }
+        self.apply_volume();
     }
 
-    fn apply_stream_volume(&mut self, volume: u8) -> bool {
-        let sink_input = self.sink_input.or_else(|| self.find_sink_input());
-        let Some(sink_input) = sink_input else {
-            return false;
-        };
-        let result = Command::new("pactl")
-            .args([
-                "set-sink-input-volume",
-                &sink_input.to_string(),
-                &format!("{volume}%"),
-            ])
-            .status();
-        if matches!(result, Ok(status) if status.success()) {
-            self.sink_input = Some(sink_input);
-            true
-        } else {
-            self.sink_input = None;
-            false
+    fn apply_volume(&self) {
+        if let Some(player) = &self.player {
+            player.set_volume(f32::from(self.volume.min(100)) / 100.0);
         }
-    }
-
-    fn find_sink_input(&mut self) -> Option<u32> {
-        const LOOKUP_INTERVAL: Duration = Duration::from_millis(250);
-        if self
-            .last_sink_lookup
-            .is_some_and(|last| last.elapsed() < LOOKUP_INTERVAL)
-        {
-            return None;
-        }
-        self.last_sink_lookup = Some(Instant::now());
-        let process_id = self.player.as_ref()?.id().to_string();
-        let output = Command::new("pactl")
-            .args(["list", "sink-inputs"])
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let output = String::from_utf8_lossy(&output.stdout);
-        output.split("Sink Input #").find_map(|block| {
-            let (header, properties) = block.split_once('\n')?;
-            let id = header.trim().parse::<u32>().ok()?;
-            let has_process_id = properties.lines().any(|line| {
-                let Some((key, value)) = line.trim().split_once('=') else {
-                    return false;
-                };
-                key.trim() == "application.process.id"
-                    && value.trim().trim_matches('"') == process_id
-            });
-            has_process_id.then_some(id)
-        })
     }
 
     pub fn is_playing(&self) -> bool {
-        self.player.is_some()
+        self.current.is_some()
+            && !self.paused
+            && self.player.as_ref().is_some_and(|player| !player.empty())
     }
 
     pub fn is_paused(&self) -> bool {
@@ -120,11 +43,10 @@ impl Playback {
 
     pub fn position(&self) -> Duration {
         if self.paused {
-            return self.position;
+            self.position
+        } else {
+            self.player.as_ref().map_or(self.position, Player::get_pos)
         }
-        self.started_at
-            .map(|started| self.position.saturating_add(started.elapsed()))
-            .unwrap_or(self.position)
     }
 
     pub fn seek(&mut self, tracks: &[Track], position: Duration) {
@@ -136,23 +58,25 @@ impl Playback {
             .and_then(|track| track.duration_ms)
             .map(Duration::from_millis);
         let position = duration.map_or(position, |duration| position.min(duration));
-        self.position = position;
-        if !self.paused {
-            self.kill_player();
-            self.start_track_at(tracks, index, position);
+        let Some(player) = &self.player else {
+            return;
+        };
+        match player.try_seek(position) {
+            Ok(()) => self.position = position,
+            Err(error) => self.error = Some(format!("Could not seek in audio track: {error}")),
         }
     }
 
-    pub fn toggle_pause(&mut self, tracks: &[Track]) {
-        let Some(index) = self.current else {
+    pub fn toggle_pause(&mut self) {
+        let Some(player) = &self.player else {
             return;
         };
         if self.paused {
-            self.start_track_at(tracks, index, self.position);
+            player.play();
+            self.paused = false;
         } else {
-            self.position = self.position();
-            self.kill_player();
-            self.started_at = None;
+            self.position = player.get_pos();
+            player.pause();
             self.paused = true;
         }
     }
@@ -167,10 +91,9 @@ impl Playback {
         let Some((&first, rest)) = album.tracks.split_first() else {
             return;
         };
-        let rest = rest.to_vec();
         self.stop();
         self.error = None;
-        self.queue.extend(rest);
+        self.queue.extend(rest.iter().copied());
         self.start_track(tracks, first);
     }
 
@@ -178,37 +101,32 @@ impl Playback {
         let Some(position) = album.tracks.iter().position(|&index| index == track_index) else {
             return;
         };
-        let remaining = album.tracks[position + 1..].to_vec();
         self.stop();
         self.error = None;
-        self.queue.extend(remaining);
+        self.queue
+            .extend(album.tracks[position + 1..].iter().copied());
         self.start_track(tracks, track_index);
     }
 
     pub fn advance_if_finished(&mut self, tracks: &[Track]) {
-        match self.player.as_mut().map(Child::try_wait) {
-            Some(Ok(Some(status))) => {
-                let finished_track = self.current;
-                self.player = None;
-                self.current = None;
-                self.position = Duration::ZERO;
-                self.started_at = None;
-                self.paused = false;
-                if let Some(next) = self.queue.pop_front() {
-                    if let Some(track) = finished_track {
-                        self.push_history(track);
-                    }
-                    self.start_track(tracks, next);
-                } else if !status.success() {
-                    self.error = Some("ffplay stopped with an error".into());
-                }
+        let finished = self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.empty() && !self.paused);
+        if !finished {
+            return;
+        }
+
+        let finished_track = self.current;
+        self.player = None;
+        self.current = None;
+        self.position = Duration::ZERO;
+        self.paused = false;
+        if let Some(next) = self.queue.pop_front() {
+            if let Some(track) = finished_track {
+                self.push_history(track);
             }
-            Some(Err(error)) => {
-                self.stop_current();
-                self.queue.clear();
-                self.error = Some(format!("Could not check ffplay status: {error}"));
-            }
-            Some(Ok(None)) | None => {}
+            self.start_track(tracks, next);
         }
     }
 
@@ -271,74 +189,61 @@ impl Playback {
 
     fn start_track_at(&mut self, tracks: &[Track], track_index: usize, position: Duration) {
         let Some(track) = tracks.get(track_index) else {
+            self.current = None;
             return;
         };
-        let mut command = Command::new("ffplay");
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.arg0("musicplayer");
-        }
-        let volume = self.volume.to_string();
-        command.args([
-            "-nodisp",
-            "-autoexit",
-            "-loglevel",
-            "error",
-            "-volume",
-            &volume,
-        ]);
-        if !position.is_zero() {
-            command.args(["-ss", &format!("{:.3}", position.as_secs_f64())]);
-        }
-        match command
-            .arg(&track.path)
-            .env("SDL_APP_NAME", "musicplayer")
-            .env("SDL_AUDIO_DEVICE_APP_NAME", "musicplayer")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(child) => {
-                #[cfg(target_os = "linux")]
-                {
-                    // btop and similar process monitors display /proc/<pid>/comm,
-                    // which exec resets to "ffplay" after the child starts.
-                    let _ = std::fs::write(format!("/proc/{}/comm", child.id()), "musicplayer");
+        let result = self.open_track(&track.path);
+        match result {
+            Ok(player) => {
+                player.set_volume(f32::from(self.volume.min(100)) / 100.0);
+                if !position.is_zero() {
+                    if let Err(error) = player.try_seek(position) {
+                        self.error = Some(format!("Could not seek in audio track: {error}"));
+                    }
                 }
-                self.player = Some(child);
-                self.sink_input = None;
-                self.mixer_volume_applied = true;
-                self.last_sink_lookup = None;
+                self.player = Some(player);
                 self.current = Some(track_index);
                 self.position = position;
-                self.started_at = Some(Instant::now());
                 self.paused = false;
             }
             Err(error) => {
+                self.player = None;
+                self.current = None;
+                self.position = Duration::ZERO;
+                self.paused = false;
                 self.queue.clear();
-                self.error = Some(format!("Could not start ffplay: {error}"));
+                self.error = Some(error);
             }
         }
     }
 
-    fn stop_current(&mut self) {
-        self.kill_player();
-        self.current = None;
-        self.position = Duration::ZERO;
-        self.started_at = None;
-        self.paused = false;
+    fn open_track(&mut self, path: &std::path::Path) -> Result<Player, String> {
+        if self.output.is_none() {
+            let mut output = rodio::DeviceSinkBuilder::open_default_sink()
+                .map_err(|error| format!("Could not open audio output: {error}"))?;
+            output.log_on_drop(false);
+            self.output = Some(output);
+        }
+
+        let file = File::open(path)
+            .map_err(|error| format!("Could not open audio file {}: {error}", path.display()))?;
+        let decoder = Decoder::try_from(file)
+            .map_err(|error| format!("Could not decode audio file {}: {error}", path.display()))?;
+        let player = Player::connect_new(
+            self.output
+                .as_ref()
+                .expect("audio output is initialized")
+                .mixer(),
+        );
+        player.append(decoder);
+        Ok(player)
     }
 
-    fn kill_player(&mut self) {
-        self.sink_input = None;
-        self.mixer_volume_applied = false;
-        self.last_sink_lookup = None;
-        if let Some(mut child) = self.player.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+    fn stop_current(&mut self) {
+        self.player = None;
+        self.current = None;
+        self.position = Duration::ZERO;
+        self.paused = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -354,16 +259,13 @@ impl Default for Playback {
         Self {
             current: None,
             error: None,
+            output: None,
             player: None,
             queue: VecDeque::new(),
             history: VecDeque::new(),
             position: Duration::ZERO,
-            started_at: None,
             paused: false,
             volume: 70,
-            sink_input: None,
-            mixer_volume_applied: false,
-            last_sink_lookup: None,
         }
     }
 }

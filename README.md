@@ -1,11 +1,11 @@
 # musicplayer
 
-A desktop music player built with Rust and egui for browsing an album-art library and playing tracks with FFmpeg.
+A desktop music player built with Rust and egui for browsing an album-art library and playing tracks with Symphonia-backed decoding.
 
 ## Requirements
 
 - Rust and Cargo
-- FFmpeg with `ffplay`, `ffprobe`, and `ffmpeg` available on `PATH`
+- An audio output device supported by Rodio
 
 ## Run
 
@@ -24,9 +24,9 @@ The app opens to the Home view. To select or change the music folder, choose **L
 - Album metadata falls back to filenames and folders when tags are missing. Albums are grouped by album artist when available, while track artists remain visible.
 - Disc folders such as `CD1`, `Disc 2`, and `Disk 3` use the parent folder as the album name and artwork location.
 - Load cover art from neighboring image files or embedded audio artwork; artwork is reduced to a 320 px thumbnail and cached.
-- Scan MP3, FLAC, Ogg, Opus, WAV, M4A, AAC, AIFF, WMA, APE, WavPack, DSF, DFF, and WebM files, subject to FFmpeg codec support.
+- Read audio metadata and embedded artwork with Lofty and Symphonia.
 
-Preferences let you choose your music folder and startup page. Preferences data, including the selected folder, volume, and last normal window size, is stored at `~/.config/musicplayer/settings.json`.
+Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/musicplayer/musicplayer.sqlite3`.
 
 ## Linux desktop integration
 
@@ -42,7 +42,7 @@ The app can then be launched from the desktop environment's application menu.
 
 - `src/main.rs` starts the application; `src/lib.rs` exposes modules and configures the native window and icon.
 - `src/app/` coordinates application state and app-level scan lifecycle in `scanner.rs`.
-- `src/views/` contains peer `home_view` and `album_view` screens; `src/components/` contains shared UI elements used across the views.
+- `src/views/home.rs` and `src/views/album_grid.rs` render the Home and Albums pages; album details and track rows live under `src/components/`.
 - `src/library/` owns models, `sorting`, `analyzer`, `modifications`, audio-file helpers, tag reading, metadata caching, and folder watching.
 - `src/artwork/` scans for and prepares cover art in `scanner.rs`, and manages decoded artwork textures in `cache.rs`.
-- `src/playback/player.rs` controls `ffplay`; `src/storage/settings.rs` loads and saves settings.
+- `src/playback/player.rs` handles Rodio playback with Symphonia decoding; `src/storage/` stores settings and metadata cache records in SQLite.

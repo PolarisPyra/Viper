@@ -4,10 +4,12 @@ use egui::emath::GuiRounding;
 use std::time::Duration;
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
+const PANEL_HEIGHT: f32 = 112.0;
+const TRACK_ART_SIZE: f32 = 68.0;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     egui::TopBottomPanel::bottom("scrubber-controls")
-        .exact_height(86.0)
+        .exact_height(PANEL_HEIGHT)
         .frame(
             egui::Frame::new()
                 .fill(egui::Color32::from_rgb(19, 22, 30))
@@ -26,7 +28,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
 
             let row_width = ui.available_width();
             let (row_rect, _) =
-                ui.allocate_exact_size(egui::vec2(row_width, 48.0), egui::Sense::hover());
+                ui.allocate_exact_size(egui::vec2(row_width, 72.0), egui::Sense::hover());
             let info_rect = egui::Rect::from_min_size(
                 row_rect.min,
                 egui::vec2((row_width * 0.32).min(280.0), row_rect.height()),
@@ -44,16 +46,14 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 row_rect.center(),
                 egui::vec2(126.0, row_rect.height()),
             );
-            let previous_rect = egui::Rect::from_min_size(
-                controls_rect.min + egui::vec2(0.0, 8.0),
+            let previous_rect = egui::Rect::from_center_size(
+                egui::pos2(controls_rect.left() + 17.0, controls_rect.center().y),
                 egui::vec2(34.0, 32.0),
             );
-            let play_rect = egui::Rect::from_min_size(
-                controls_rect.min + egui::vec2(44.0, 5.0),
-                egui::vec2(38.0, 38.0),
-            );
-            let next_rect = egui::Rect::from_min_size(
-                controls_rect.min + egui::vec2(92.0, 8.0),
+            let play_rect =
+                egui::Rect::from_center_size(controls_rect.center(), egui::vec2(38.0, 38.0));
+            let next_rect = egui::Rect::from_center_size(
+                egui::pos2(controls_rect.right() - 17.0, controls_rect.center().y),
                 egui::vec2(34.0, 32.0),
             );
             let previous = ui.interact(
@@ -75,14 +75,14 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_BACK,
-                egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
                 if previous.hovered() {
                     egui::Color32::WHITE
                 } else {
                     egui::Color32::from_gray(190)
                 },
             );
-            ui.painter().circle_filled(play_rect.center(), 17.0, ACCENT);
+            ui.painter().circle_filled(play_rect.center(), 18.0, ACCENT);
             let icon = if app.playback.is_playing() {
                 egui_phosphor::regular::PAUSE
             } else {
@@ -92,14 +92,14 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 play_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 icon,
-                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(26.0, egui::FontFamily::Name("phosphor".into())),
                 egui::Color32::WHITE,
             );
             ui.painter().text(
                 next_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_FORWARD,
-                egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
                 if next.hovered() {
                     egui::Color32::WHITE
                 } else {
@@ -118,7 +118,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             }
             if play.clicked() {
                 if current.is_some() {
-                    app.playback.toggle_pause(&app.library.tracks);
+                    app.playback.toggle_pause();
                 } else if let Some(album_index) = app.selected_album {
                     if let Some(album) = app.library.albums.get(album_index) {
                         app.playback.play_album(album, &app.library.tracks);
@@ -130,7 +130,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             }
 
             let volume_area = egui::Rect::from_min_size(
-                row_rect.right_top() + egui::vec2(-176.0, 9.0),
+                egui::pos2(row_rect.right() - 176.0, row_rect.center().y - 15.0),
                 egui::vec2(176.0, 30.0),
             );
             let audio_info = current
@@ -204,12 +204,10 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 }
             }
             if volume_response.dragged() {
-                app.playback
-                    .preview_volume(&app.library.tracks, app.settings.volume);
+                app.playback.preview_volume(app.settings.volume);
             }
             if volume_response.clicked() || volume_response.drag_stopped() {
-                app.playback
-                    .set_volume(&app.library.tracks, app.settings.volume);
+                app.playback.set_volume(app.settings.volume);
                 if let Err(error) = app.settings.save() {
                     app.error = Some(format!("Could not save settings: {error}"));
                 }
@@ -311,7 +309,9 @@ fn show_track_info(
         let Some(track) = app.library.tracks.get(index) else {
             return;
         };
-        let cover = ui.allocate_space(egui::vec2(48.0, 48.0)).1;
+        let cover = ui
+            .allocate_space(egui::vec2(TRACK_ART_SIZE, TRACK_ART_SIZE))
+            .1;
         if let Some(texture) = texture {
             ui.painter().image(
                 texture.id(),

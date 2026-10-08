@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fs,
+    fs,
     io::{self, ErrorKind},
     path::PathBuf,
 };
@@ -111,56 +111,227 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load() -> io::Result<Self> {
-        let path = Self::file_path()?;
-        match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|error| io::Error::new(ErrorKind::InvalidData, error)),
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                let previous_path = path.with_file_name("musicplayer.json");
-                match fs::read(&previous_path) {
-                    Ok(bytes) => {
-                        let settings = serde_json::from_slice(&bytes)
-                            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-                        if fs::write(&path, bytes).is_ok() {
-                            let _ = fs::remove_file(previous_path);
-                        }
-                        Ok(settings)
-                    }
-                    Err(previous_error) if previous_error.kind() == ErrorKind::NotFound => {
-                        Ok(Self::default())
-                    }
-                    Err(previous_error) => Err(previous_error),
+        use rusqlite::OptionalExtension;
+
+        let connection = super::database::open()?;
+        let stored = connection
+            .query_row(
+                "SELECT music_path, window_width, window_height, startup_view,
+                        left_panel_width, left_panel_hidden, right_panel_width, volume,
+                        album_sort, sort_ascending
+                 FROM app_settings WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<f64>>(1)?,
+                        row.get::<_, Option<f64>>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, f32>(4)?,
+                        row.get::<_, bool>(5)?,
+                        row.get::<_, f32>(6)?,
+                        row.get::<_, u8>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, bool>(9)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(super::database::database_error)?;
+
+        let mut settings = if let Some((
+            music_path,
+            window_width,
+            window_height,
+            startup_view,
+            left_panel_width,
+            left_panel_hidden,
+            right_panel_width,
+            volume,
+            album_sort,
+            sort_ascending,
+        )) = stored
+        {
+            Self {
+                music_path: music_path.map(PathBuf::from),
+                window_size: window_width
+                    .zip(window_height)
+                    .map(|(width, height)| [width as f32, height as f32]),
+                startup_view: decode_setting(&startup_view)?,
+                left_panel_width,
+                left_panel_hidden,
+                right_panel_width,
+                volume,
+                album_sort: decode_setting(&album_sort)?,
+                sort_ascending,
+                ..Self::default()
+            }
+        } else {
+            load_legacy_settings()?.unwrap_or_default()
+        };
+
+        {
+            let mut statement = connection
+                .prepare("SELECT album_key, favorite, rating, play_count, last_played, added FROM album_state")
+                .map_err(super::database::database_error)?;
+            let mut rows = statement
+                .query([])
+                .map_err(super::database::database_error)?;
+            while let Some(row) = rows.next().map_err(super::database::database_error)? {
+                let key: String = row.get(0).map_err(super::database::database_error)?;
+                if row
+                    .get::<_, bool>(1)
+                    .map_err(super::database::database_error)?
+                {
+                    settings.favorite_albums.insert(key.clone());
+                }
+                if let Some(value) = row
+                    .get::<_, Option<u8>>(2)
+                    .map_err(super::database::database_error)?
+                {
+                    settings.album_ratings.insert(key.clone(), value);
+                }
+                if let Some(value) = row
+                    .get::<_, Option<i64>>(3)
+                    .map_err(super::database::database_error)?
+                    .and_then(|value| u64::try_from(value).ok())
+                {
+                    settings.album_play_counts.insert(key.clone(), value);
+                }
+                if let Some(value) = row
+                    .get::<_, Option<i64>>(4)
+                    .map_err(super::database::database_error)?
+                    .and_then(|value| u64::try_from(value).ok())
+                {
+                    settings.album_last_played.insert(key.clone(), value);
+                }
+                if let Some(value) = row
+                    .get::<_, Option<i64>>(5)
+                    .map_err(super::database::database_error)?
+                    .and_then(|value| u64::try_from(value).ok())
+                {
+                    settings.album_added.insert(key, value);
                 }
             }
-
-            Err(error) => Err(error),
         }
+
+        if !connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM app_settings WHERE id = 1)",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(super::database::database_error)?
+        {
+            settings.save()?;
+            for path in legacy_settings_paths()? {
+                let _ = fs::remove_file(path);
+            }
+        }
+        Ok(settings)
     }
 
     pub fn save(&self) -> io::Result<()> {
-        let path = Self::file_path()?;
-        let directory = path.parent().ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::InvalidInput,
-                "settings path has no parent directory",
-            )
-        })?;
-        fs::create_dir_all(directory)?;
-        let temporary_path = path.with_extension("json.tmp");
-        let contents = serde_json::to_vec_pretty(self)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-        fs::write(&temporary_path, contents)?;
-        fs::rename(temporary_path, path)
+        let mut connection = super::database::open()?;
+        let transaction = connection
+            .transaction()
+            .map_err(super::database::database_error)?;
+        let (window_width, window_height) =
+            self.window_size.map_or((None, None), |[width, height]| {
+                (Some(f64::from(width)), Some(f64::from(height)))
+            });
+        transaction.execute(
+            "INSERT INTO app_settings (
+                id, music_path, window_width, window_height, startup_view,
+                left_panel_width, left_panel_hidden, right_panel_width, volume,
+                album_sort, sort_ascending
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                music_path=excluded.music_path, window_width=excluded.window_width,
+                window_height=excluded.window_height, startup_view=excluded.startup_view,
+                left_panel_width=excluded.left_panel_width, left_panel_hidden=excluded.left_panel_hidden,
+                right_panel_width=excluded.right_panel_width, volume=excluded.volume,
+                album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending",
+            rusqlite::params![
+                self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
+                window_width,
+                window_height,
+                encode_setting(&self.startup_view)?,
+                self.left_panel_width,
+                self.left_panel_hidden,
+                self.right_panel_width,
+                self.volume,
+                encode_setting(&self.album_sort)?,
+                self.sort_ascending,
+            ],
+        ).map_err(super::database::database_error)?;
+
+        transaction
+            .execute("DELETE FROM album_state", [])
+            .map_err(super::database::database_error)?;
+        let keys: BTreeSet<_> = self
+            .favorite_albums
+            .iter()
+            .chain(self.album_ratings.keys())
+            .chain(self.album_play_counts.keys())
+            .chain(self.album_last_played.keys())
+            .chain(self.album_added.keys())
+            .collect();
+        for key in keys {
+            transaction.execute(
+                "INSERT INTO album_state (album_key, favorite, rating, play_count, last_played, added)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    key,
+                    self.favorite_albums.contains(key),
+                    self.album_ratings.get(key).copied(),
+                    self.album_play_counts.get(key).copied().map(sqlite_integer),
+                    self.album_last_played.get(key).copied().map(sqlite_integer),
+                    self.album_added.get(key).copied().map(sqlite_integer),
+                ],
+            ).map_err(super::database::database_error)?;
+        }
+        transaction
+            .commit()
+            .map_err(super::database::database_error)
     }
 
     pub fn file_path() -> io::Result<PathBuf> {
-        let home = env::var_os("HOME")
-            .or_else(|| env::var_os("USERPROFILE"))
-            .map(PathBuf::from)
-            .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "home directory is unavailable"))?;
-        Ok(home
-            .join(".config")
-            .join("musicplayer")
-            .join("settings.json"))
+        super::database::database_path()
     }
+}
+
+fn encode_setting<T: Serialize>(value: &T) -> io::Result<String> {
+    serde_json::to_string(value).map_err(|error| io::Error::new(ErrorKind::InvalidData, error))
+}
+
+fn decode_setting<T: for<'de> Deserialize<'de>>(value: &str) -> io::Result<T> {
+    serde_json::from_str(value).map_err(|error| io::Error::new(ErrorKind::InvalidData, error))
+}
+
+fn sqlite_integer(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+fn legacy_settings_paths() -> io::Result<[PathBuf; 2]> {
+    let database = super::database::database_path()?;
+    Ok([
+        database.with_file_name("settings.json"),
+        database.with_file_name("musicplayer.json"),
+    ])
+}
+
+fn load_legacy_settings() -> io::Result<Option<Settings>> {
+    for path in legacy_settings_paths()? {
+        match fs::read(path) {
+            Ok(bytes) => {
+                return serde_json::from_slice(&bytes)
+                    .map(Some)
+                    .map_err(|error| io::Error::new(ErrorKind::InvalidData, error));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(None)
 }

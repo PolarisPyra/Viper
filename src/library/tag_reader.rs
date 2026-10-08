@@ -3,7 +3,8 @@ use lofty::{
     file::{AudioFile, TaggedFileExt},
     tag::ItemKey,
 };
-use std::{path::Path, process::Command};
+use std::path::Path;
+use symphonia::core::meta::StandardTagKey;
 
 pub(super) struct TrackMetadata {
     pub(super) title: Option<String>,
@@ -64,86 +65,50 @@ pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
         };
     }
 
-    // Formats outside Lofty's supported set still use ffprobe as a fallback.
-    let Ok(output) = Command::new("ffprobe")
-        .args([
-            "-v",
-            "quiet",
-            "-show_entries",
-            "format=duration,bit_rate:format_tags=title,artist,album,album_artist,albumartist,track,tracknumber,disc,discnumber,date,year:stream=sample_rate,channels,bits_per_sample,bits_per_raw_sample,bit_rate",
-            "-of",
-            "json",
-        ])
-        .arg(path)
-        .output()
-    else {
+    let Some(media) = super::symphonia::probe(path) else {
         return empty_metadata();
     };
-    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-        return empty_metadata();
-    };
-
-    let tags = json.get("format").and_then(|format| format.get("tags"));
-    let stream = json
-        .get("streams")
-        .and_then(serde_json::Value::as_array)
-        .and_then(|streams| streams.first());
-    let parse_property = |value: Option<&serde_json::Value>| {
-        value.and_then(|value| {
-            value
-                .as_str()
-                .and_then(|text| text.parse().ok())
-                .or_else(|| value.as_u64().and_then(|number| u32::try_from(number).ok()))
-        })
-    };
-    let bitrate_bps = parse_property(
-        stream
-            .and_then(|stream| stream.get("bit_rate"))
-            .or_else(|| json.get("format").and_then(|format| format.get("bit_rate"))),
-    );
-    let audio = AudioProperties {
-        bitrate_kbps: bitrate_bps.map(|bitrate| bitrate / 1000),
-        sample_rate_hz: parse_property(stream.and_then(|stream| stream.get("sample_rate"))),
-        bit_depth: parse_property(
-            stream
-                .and_then(|stream| stream.get("bits_per_raw_sample"))
-                .or_else(|| stream.and_then(|stream| stream.get("bits_per_sample"))),
-        )
-        .and_then(|depth| u8::try_from(depth).ok()),
-        channels: parse_property(stream.and_then(|stream| stream.get("channels")))
-            .and_then(|channels| u8::try_from(channels).ok()),
-    };
-    let lookup = |key: &str| {
-        tags?
-            .as_object()?
+    let lookup = |standard_key: StandardTagKey, aliases: &[&str]| {
+        media
+            .tags
             .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(key))
-            .and_then(|(_, value)| value.as_str())
-            .map(str::trim)
+            .find(|tag| {
+                tag.standard_key == Some(standard_key)
+                    || aliases
+                        .iter()
+                        .any(|alias| tag.key.eq_ignore_ascii_case(alias))
+            })
+            .map(|tag| tag.value.trim())
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
     };
-    let parse_number = |value: Option<String>| {
-        value.and_then(|tag| tag.split('/').next()?.trim().parse::<u32>().ok())
+    let number = |standard_key, aliases| {
+        lookup(standard_key, aliases).and_then(|value| value.split('/').next()?.trim().parse().ok())
     };
 
     TrackMetadata {
-        title: lookup("title"),
-        artist: lookup("artist"),
-        album: lookup("album"),
-        album_artist: lookup("album_artist").or_else(|| lookup("albumartist")),
-        disc_number: parse_number(lookup("disc").or_else(|| lookup("discnumber"))),
-        track_number: parse_number(lookup("track").or_else(|| lookup("tracknumber"))),
-        duration_ms: json
-            .get("format")
-            .and_then(|format| format.get("duration"))
-            .and_then(serde_json::Value::as_str)
-            .and_then(|duration| duration.parse::<f64>().ok())
-            .map(|seconds| (seconds.max(0.0) * 1000.0) as u64),
-        release_year: lookup("date")
-            .or_else(|| lookup("year"))
-            .and_then(|date| date.get(..4)?.parse::<u32>().ok()),
-        audio,
+        title: lookup(StandardTagKey::TrackTitle, &["title", "tracktitle"]),
+        artist: lookup(StandardTagKey::Artist, &["artist"]),
+        album: lookup(StandardTagKey::Album, &["album"]),
+        album_artist: lookup(
+            StandardTagKey::AlbumArtist,
+            &["album_artist", "albumartist"],
+        ),
+        disc_number: number(StandardTagKey::DiscNumber, &["disc", "discnumber"]),
+        track_number: number(StandardTagKey::TrackNumber, &["track", "tracknumber"]),
+        duration_ms: media.duration_ms,
+        release_year: lookup(
+            StandardTagKey::Date,
+            &[
+                "date",
+                "year",
+                "recordingdate",
+                "originaldate",
+                "releasedate",
+            ],
+        )
+        .and_then(|date| date.get(..4)?.parse().ok()),
+        audio: media.audio,
     }
 }
 
