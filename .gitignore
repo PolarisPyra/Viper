@@ -16,3 +16,4 @@ Thumbs.db
 # Cargo.lock
 .clinerules 
 .agents
+skills-lock.json
