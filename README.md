@@ -5,7 +5,6 @@ A desktop music player built with Rust and egui for browsing an album-art librar
 ## Requirements
 
 - Rust and Cargo
-- An audio output device supported by Rodio
 
 ## Run
 
