@@ -1,4 +1,4 @@
-use super::MusicApp;
+use super::ViperApp;
 use crate::library::{scan_library, Library, ScanProgress};
 use std::{
     path::PathBuf,
@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-impl MusicApp {
+impl ViperApp {
     pub(super) fn start_scan(&mut self, root: PathBuf) {
         if let Some(cancel) = self.scan_cancel.take() {
             cancel.store(true, Ordering::Relaxed);

@@ -1,4 +1,4 @@
-use super::MusicApp;
+use super::ViperApp;
 use crate::library::{
     merge_discovered_tracks, remove_library_tracks, scan_added_tracks,
     watcher::{FileChange, FileWatcher},
@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-impl MusicApp {
+impl ViperApp {
     pub(super) fn poll_file_watcher(&mut self, ctx: &egui::Context) {
         if let Some(root) = self.settings.music_path.as_ref() {
             if self.watcher_root.as_ref() != Some(root) {

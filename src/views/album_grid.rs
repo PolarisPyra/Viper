@@ -1,22 +1,22 @@
-use crate::{app::MusicApp, storage::settings::AlbumSort};
+use crate::{app::ViperApp, storage::settings::AlbumSort};
 use eframe::egui;
 
 use crate::components::album_card;
 
 const CANVAS: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     show_album_browser(ctx, app);
 }
 
-fn show_album_browser(ctx: &egui::Context, app: &mut MusicApp) {
+fn show_album_browser(ctx: &egui::Context, app: &mut ViperApp) {
     show_sort_toolbar(ctx, app);
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(CANVAS).inner_margin(0))
         .show(ctx, |ui| show_grid(ctx, ui, app));
 }
 
-fn show_sort_toolbar(ctx: &egui::Context, app: &mut MusicApp) {
+fn show_sort_toolbar(ctx: &egui::Context, app: &mut ViperApp) {
     egui::TopBottomPanel::top("album-sort-toolbar")
         .exact_height(48.0)
         .frame(egui::Frame::new().fill(CANVAS).inner_margin(egui::Margin {
@@ -122,7 +122,7 @@ fn style_sort_menu(ui: &mut egui::Ui) {
     }
 }
 
-fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut MusicApp) {
+fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut ViperApp) {
     ui.spacing_mut().scroll.bar_outer_margin = 10.0;
     ui.spacing_mut().scroll.dormant_background_opacity = 0.0;
     ui.spacing_mut().scroll.active_background_opacity = 0.0;
@@ -144,7 +144,7 @@ fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut MusicApp) {
         });
 }
 
-fn show_empty_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &MusicApp, width: f32) {
+fn show_empty_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &ViperApp, width: f32) {
     if app.scanning && app.library.albums.is_empty() && app.search.trim().is_empty() {
         show_skeleton_albums(ctx, ui, width);
         return;
@@ -169,7 +169,7 @@ fn show_empty_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &MusicApp, width
 fn show_album_rows(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
-    app: &mut MusicApp,
+    app: &mut ViperApp,
     albums: &[usize],
     viewport: egui::Rect,
     width: f32,

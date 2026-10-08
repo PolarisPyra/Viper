@@ -1,4 +1,4 @@
-use crate::app::MusicApp;
+use crate::app::ViperApp;
 use eframe::egui;
 
 const PANEL: egui::Color32 = egui::Color32::from_rgb(22, 25, 34);
@@ -6,7 +6,7 @@ const PANEL_BORDER: egui::Color32 = egui::Color32::from_rgb(51, 57, 72);
 const TEXT: egui::Color32 = egui::Color32::from_rgb(232, 235, 244);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(148, 155, 173);
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     if !app.show_preferences {
         return;
     }
@@ -81,8 +81,8 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                     ui.set_width(ui.available_width());
                     match app.preferences_category.unwrap_or(Category::General) {
                         Category::General => show_general(ui, app),
+                        Category::Connections => show_connections(ui, app),
                         Category::Audio
-                        | Category::Connections
                         | Category::Theme
                         | Category::View
                         | Category::Services
@@ -96,7 +96,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     }
 }
 
-fn category_tabs(ui: &mut egui::Ui, app: &mut MusicApp) {
+fn category_tabs(ui: &mut egui::Ui, app: &mut ViperApp) {
     let mut selected = app.preferences_category.unwrap_or(Category::General);
     egui::ScrollArea::horizontal()
         .id_salt("preferences-category-tabs")
@@ -173,7 +173,7 @@ const BORDER: egui::Color32 = egui::Color32::from_rgb(67, 72, 91);
 const ROW_HOVERED: egui::Color32 = egui::Color32::from_rgb(32, 36, 47);
 const ROW_SELECTED: egui::Color32 = egui::Color32::from_rgb(34, 38, 49);
 
-fn show_general(ui: &mut egui::Ui, app: &mut crate::app::MusicApp) {
+fn show_general(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
     ui.set_min_width(420.0);
     ui.add_space(8.0);
     section_title(ui, "Music library");
@@ -291,6 +291,34 @@ fn show_general(ui: &mut egui::Ui, app: &mut crate::app::MusicApp) {
         if let Err(error) = app.settings.save() {
             app.error = Some(format!("Could not save settings: {error}"));
         }
+    }
+}
+
+fn show_connections(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
+    ui.set_min_width(420.0);
+    ui.add_space(8.0);
+    section_title(ui, "Discord Rich Presence");
+    ui.label("Show the song currently playing in your Discord profile.");
+    ui.add_space(10.0);
+    ui.label("Discord Application ID");
+    ui.add(
+        egui::TextEdit::singleline(&mut app.discord_application_id_draft)
+            .hint_text("Enter your Discord application ID")
+            .desired_width(ui.available_width()),
+    );
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new("Create an application in the Discord Developer Portal and copy its Application ID here.")
+            .size(11.0)
+            .color(MUTED),
+    );
+    ui.add_space(12.0);
+    if ui.button("Save Discord settings").clicked() {
+        app.settings.discord_application_id = match app.discord_application_id_draft.trim() {
+            "" => None,
+            id => Some(id.to_owned()),
+        };
+        app.save_settings();
     }
 }
 

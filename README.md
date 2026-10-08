@@ -1,4 +1,4 @@
-# musicplayer
+# Viper
 
 A desktop music player built with Rust and egui for browsing an album-art library and playing tracks with Symphonia-backed decoding.
 
@@ -26,7 +26,7 @@ The app opens to the Home view. To select or change the music folder, choose **L
 - Load cover art from neighboring image files or embedded audio artwork; artwork is reduced to a 320 px thumbnail and cached.
 - Read audio metadata and embedded artwork with Lofty and Symphonia.
 
-Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/musicplayer/musicplayer.sqlite3`.
+Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/viper/viper.sqlite3`. Existing settings databases are copied from the previous `~/.config/viper/` location on first launch.
 
 ## Linux desktop integration
 
@@ -40,7 +40,7 @@ The app can then be launched from the desktop environment's application menu.
 
 ## Project layout
 
-- `src/main.rs` starts the application; `src/app/initialization.rs` configures fonts and the native window, then creates `MusicApp`.
+- `src/main.rs` starts the application; `src/app/initialization.rs` configures fonts and the native window, then creates `ViperApp`.
 - `src/app/` coordinates application state and initial library loading in `library_loader.rs` and filesystem updates in `library_watcher.rs`.
 - `src/views/home.rs` and `src/views/album_grid.rs` render the Home and Albums pages; album details and track rows live under `src/components/`.
 - `src/library/` owns models, `sorting`, `scanner`, `modifications`, audio-file helpers, tag reading, metadata caching, and folder watching.

@@ -86,6 +86,7 @@ pub struct Settings {
     pub album_play_counts: BTreeMap<String, u64>,
     pub album_last_played: BTreeMap<String, u64>,
     pub album_added: BTreeMap<String, u64>,
+    pub discord_application_id: Option<String>,
 }
 
 impl Default for Settings {
@@ -105,6 +106,7 @@ impl Default for Settings {
             album_play_counts: BTreeMap::new(),
             album_last_played: BTreeMap::new(),
             album_added: BTreeMap::new(),
+            discord_application_id: None,
         }
     }
 }
@@ -118,7 +120,7 @@ impl Settings {
             .query_row(
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
-                        album_sort, sort_ascending
+                        album_sort, sort_ascending, discord_application_id
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -133,6 +135,7 @@ impl Settings {
                         row.get::<_, u8>(7)?,
                         row.get::<_, String>(8)?,
                         row.get::<_, bool>(9)?,
+                        row.get::<_, Option<String>>(10)?,
                     ))
                 },
             )
@@ -150,6 +153,7 @@ impl Settings {
             volume,
             album_sort,
             sort_ascending,
+            discord_application_id,
         )) = stored
         {
             Self {
@@ -164,6 +168,7 @@ impl Settings {
                 volume,
                 album_sort: decode_setting(&album_sort)?,
                 sort_ascending,
+                discord_application_id,
                 ..Self::default()
             }
         } else {
@@ -244,14 +249,15 @@ impl Settings {
             "INSERT INTO app_settings (
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
-                album_sort, sort_ascending
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                album_sort, sort_ascending, discord_application_id
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
                 left_panel_width=excluded.left_panel_width, left_panel_hidden=excluded.left_panel_hidden,
                 right_panel_width=excluded.right_panel_width, volume=excluded.volume,
-                album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending",
+                album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending,
+                discord_application_id=excluded.discord_application_id",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -263,6 +269,7 @@ impl Settings {
                 self.volume,
                 encode_setting(&self.album_sort)?,
                 self.sort_ascending,
+                self.discord_application_id,
             ],
         ).map_err(super::database::database_error)?;
 
@@ -313,11 +320,14 @@ fn sqlite_integer(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 
-fn legacy_settings_paths() -> io::Result<[PathBuf; 2]> {
+fn legacy_settings_paths() -> io::Result<[PathBuf; 4]> {
     let database = super::database::database_path()?;
+    let legacy_database = super::database::legacy_database_path()?;
     Ok([
         database.with_file_name("settings.json"),
         database.with_file_name("musicplayer.json"),
+        legacy_database.with_file_name("settings.json"),
+        legacy_database.with_file_name("musicplayer.json"),
     ])
 }
 

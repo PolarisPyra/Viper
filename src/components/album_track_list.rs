@@ -1,4 +1,4 @@
-use crate::app::MusicApp;
+use crate::app::ViperApp;
 use eframe::egui;
 
 const PANEL: egui::Color32 = egui::Color32::from_rgb(20, 23, 31);
@@ -6,11 +6,11 @@ const PANEL_BORDER: egui::Color32 = egui::Color32::from_rgb(45, 49, 61);
 const MIN_PANEL_WIDTH: f32 = 260.0;
 const MAX_PANEL_WIDTH: f32 = 520.0;
 
-pub(crate) fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub(crate) fn show(ctx: &egui::Context, app: &mut ViperApp) {
     show_album_details(ctx, app);
 }
 
-fn show_album_details(ctx: &egui::Context, app: &mut MusicApp) {
+fn show_album_details(ctx: &egui::Context, app: &mut ViperApp) {
     if !app.show_album_details {
         return;
     }
@@ -302,7 +302,7 @@ fn draw_action_hover(ui: &egui::Ui, rect: egui::Rect, hovered: bool) {
     }
 }
 
-fn save_settings(app: &mut MusicApp) {
+fn save_settings(app: &mut ViperApp) {
     if let Err(error) = app.settings.save() {
         app.error = Some(format!("Could not save settings: {error}"));
     }

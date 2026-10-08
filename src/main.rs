@@ -1,3 +1,3 @@
 fn main() -> eframe::Result<()> {
-    musicplayer::run()
+    viper::run()
 }

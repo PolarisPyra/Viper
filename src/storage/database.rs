@@ -2,17 +2,24 @@ use rusqlite::Connection;
 use std::{env, io, path::PathBuf, time::Duration};
 
 const INITIAL_SCHEMA: &str = include_str!("migrations/0001_initial.sql");
-const SCHEMA_VERSION: i64 = 1;
+const DISCORD_PRESENCE_SCHEMA: &str = include_str!("migrations/0002_discord_application_id.sql");
 
 pub(crate) fn database_path() -> io::Result<PathBuf> {
+    Ok(config_directory()?.join("viper").join("viper.sqlite3"))
+}
+
+pub(crate) fn legacy_database_path() -> io::Result<PathBuf> {
+    Ok(config_directory()?
+        .join("musicplayer")
+        .join("musicplayer.sqlite3"))
+}
+
+fn config_directory() -> io::Result<PathBuf> {
     let home = env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "home directory is unavailable"))?;
-    Ok(home
-        .join(".config")
-        .join("musicplayer")
-        .join("musicplayer.sqlite3"))
+    Ok(home.join(".config"))
 }
 
 pub(crate) fn open() -> io::Result<Connection> {
@@ -24,6 +31,16 @@ pub(crate) fn open() -> io::Result<Connection> {
         )
     })?;
     std::fs::create_dir_all(parent)?;
+
+    if !path.exists() {
+        let legacy_path = legacy_database_path()?;
+        if legacy_path.exists() {
+            let legacy_connection = Connection::open(legacy_path).map_err(database_error)?;
+            legacy_connection
+                .backup("main", &path, None)
+                .map_err(database_error)?;
+        }
+    }
 
     let mut connection = Connection::open(path).map_err(database_error)?;
     connection
@@ -39,13 +56,23 @@ pub(crate) fn open() -> io::Result<Connection> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(database_error)?;
-    if version < SCHEMA_VERSION {
+    if version < 1 {
         let transaction = connection.transaction().map_err(database_error)?;
         transaction
             .execute_batch(INITIAL_SCHEMA)
             .map_err(database_error)?;
         transaction
-            .pragma_update(None, "user_version", SCHEMA_VERSION)
+            .pragma_update(None, "user_version", 1)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+    if version < 2 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(DISCORD_PRESENCE_SCHEMA)
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 2)
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)?;
     }

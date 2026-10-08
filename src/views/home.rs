@@ -1,5 +1,5 @@
 use crate::{
-    app::{MusicApp, Page},
+    app::{Page, ViperApp},
     library::sorting::album_sort_key,
     library::Album,
 };
@@ -12,7 +12,7 @@ const TEXT: egui::Color32 = egui::Color32::from_rgb(231, 233, 241);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(145, 152, 169);
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(170, 145, 255);
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     egui::CentralPanel::default()
         .frame(
             egui::Frame::new()
@@ -73,7 +73,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                 "Your library is empty",
                                 "Choose a folder with supported audio files to get started.",
                                 "Choose Music Folder",
-                                MusicApp::choose_folder,
+                                ViperApp::choose_folder,
                                 app,
                             );
                         }
@@ -158,7 +158,7 @@ fn albums_by_timestamp(
         .collect()
 }
 
-fn onboarding(ui: &mut egui::Ui, app: &mut MusicApp) {
+fn onboarding(ui: &mut egui::Ui, app: &mut ViperApp) {
     egui::Frame::new()
         .fill(PANEL)
         .corner_radius(14.0)
@@ -220,8 +220,8 @@ fn empty_state(
     title: &str,
     description: &str,
     action: &str,
-    on_click: impl FnOnce(&mut MusicApp),
-    app: &mut MusicApp,
+    on_click: impl FnOnce(&mut ViperApp),
+    app: &mut ViperApp,
 ) {
     egui::Frame::new()
         .fill(PANEL)
@@ -238,7 +238,7 @@ fn empty_state(
         });
 }
 
-fn show_continue_listening(ui: &mut egui::Ui, app: &mut MusicApp) {
+fn show_continue_listening(ui: &mut egui::Ui, app: &mut ViperApp) {
     section_heading(ui, "Continue listening");
     if let Some(track_index) = app.playback.current {
         let Some(track) = app.library.tracks.get(track_index) else {
@@ -310,7 +310,7 @@ fn show_continue_listening(ui: &mut egui::Ui, app: &mut MusicApp) {
 fn album_section(
     ui: &mut egui::Ui,
     ctx: &egui::Context,
-    app: &mut MusicApp,
+    app: &mut ViperApp,
     title: &str,
     indices: &[usize],
 ) {

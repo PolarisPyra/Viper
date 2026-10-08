@@ -1,7 +1,7 @@
-use crate::app::{MusicApp, Page};
+use crate::app::{Page, ViperApp};
 use eframe::egui;
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     egui::TopBottomPanel::top("app-menu-bar")
         .exact_height(34.0)
         .frame(

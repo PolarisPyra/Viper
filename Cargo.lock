@@ -937,6 +937,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "discord-rich-presence"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90c55d69cab17c19677ce3a5f8face993a9e6eaf847fecac3547f3a3ff4a2494"
+dependencies = [
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_repr",
+ "thiserror 2.0.21",
+ "uuid 0.8.2",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2250,27 +2265,6 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
-
-[[package]]
-name = "musicplayer"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui-phosphor",
- "font-kit",
- "image",
- "libc",
- "lofty",
- "notify",
- "rayon",
- "rfd",
- "rodio",
- "rusqlite",
- "serde",
- "serde_json",
- "symphonia",
- "symphonia-adapter-libopus",
-]
 
 [[package]]
 name = "naga"
@@ -4132,6 +4126,15 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom 0.2.17",
+]
+
+[[package]]
+name = "uuid"
 version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
@@ -4152,6 +4155,28 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "viper"
+version = "0.1.0"
+dependencies = [
+ "discord-rich-presence",
+ "eframe",
+ "egui-phosphor",
+ "font-kit",
+ "image",
+ "libc",
+ "lofty",
+ "notify",
+ "rayon",
+ "rfd",
+ "rodio",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "symphonia",
+ "symphonia-adapter-libopus",
+]
 
 [[package]]
 name = "walkdir"
@@ -5204,7 +5229,7 @@ dependencies = [
  "serde_repr",
  "tracing",
  "uds_windows",
- "uuid",
+ "uuid 1.27.0",
  "windows-sys 0.61.2",
  "winnow",
  "zbus_macros 5.19.0",

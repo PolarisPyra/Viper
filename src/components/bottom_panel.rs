@@ -1,4 +1,4 @@
-use crate::app::MusicApp;
+use crate::app::ViperApp;
 use eframe::egui;
 use egui::emath::GuiRounding;
 use std::time::Duration;
@@ -7,7 +7,7 @@ const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
 const PANEL_HEIGHT: f32 = 112.0;
 const TRACK_ART_SIZE: f32 = 68.0;
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     egui::TopBottomPanel::bottom("scrubber-controls")
         .exact_height(PANEL_HEIGHT)
         .frame(
@@ -300,7 +300,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
 fn show_track_info(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
-    app: &mut MusicApp,
+    app: &mut ViperApp,
     current: Option<usize>,
 ) {
     if let Some(index) = current {

@@ -1,5 +1,5 @@
 use crate::{
-    app::{MusicApp, Page},
+    app::{Page, ViperApp},
     storage::settings::StartupView,
 };
 use eframe::egui;
@@ -8,7 +8,7 @@ const SIDEBAR: egui::Color32 = egui::Color32::from_rgb(17, 20, 28);
 const TEXT: egui::Color32 = egui::Color32::from_rgb(221, 225, 236);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(130, 137, 153);
 
-pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
+pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     let panel_width = if app.settings.left_panel_hidden {
         0.0
     } else {
@@ -62,7 +62,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     }
 }
 
-fn nav_item(ui: &mut egui::Ui, label: &str, icon: &str, page: Page, app: &mut MusicApp) {
+fn nav_item(ui: &mut egui::Ui, label: &str, icon: &str, page: Page, app: &mut ViperApp) {
     let selected = app.page == page;
     let size = egui::vec2(ui.available_width(), 40.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());

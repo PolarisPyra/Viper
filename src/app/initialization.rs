@@ -1,4 +1,4 @@
-use crate::{app::MusicApp, storage::settings::Settings};
+use crate::{app::ViperApp, storage::settings::Settings};
 
 const APP_ICON_PNG: &[u8] = include_bytes!("../../assets/logo.png");
 
@@ -87,7 +87,7 @@ pub fn run() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         persist_window: false,
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_app_id("musicplayer")
+            .with_app_id("viper")
             .with_inner_size(window_size)
             .with_min_inner_size([760.0, 520.0])
             .with_icon(eframe::egui::IconData {
@@ -98,11 +98,11 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "musicplayer",
+        "Viper",
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_fonts(load_app_fonts());
-            Ok(Box::new(MusicApp::with_settings_result(settings)))
+            Ok(Box::new(ViperApp::with_settings_result(settings)))
         }),
     )
 }

@@ -1,10 +1,10 @@
-use crate::app::MusicApp;
+use crate::app::ViperApp;
 use eframe::egui;
 
 pub(crate) fn show(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
-    app: &mut MusicApp,
+    app: &mut ViperApp,
     index: usize,
     card_width: f32,
     art_size: f32,

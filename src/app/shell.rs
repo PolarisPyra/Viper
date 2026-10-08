@@ -1,3 +1,4 @@
+use super::discord_presence::DiscordPresence;
 use crate::{
     artwork::ArtworkCache,
     library::watcher::FileWatcher,
@@ -29,10 +30,12 @@ pub(crate) enum Page {
     Albums,
 }
 
-pub struct MusicApp {
+pub struct ViperApp {
     pub(crate) library: Library,
     pub(crate) playback: Playback,
     pub(crate) settings: Settings,
+    pub(crate) discord_application_id_draft: String,
+    discord_presence: DiscordPresence,
     pub(crate) search: String,
     album_filter_query: String,
     filtered_albums: Arc<Vec<usize>>,
@@ -62,7 +65,7 @@ pub struct MusicApp {
     last_window_size: Option<[f32; 2]>,
 }
 
-impl MusicApp {
+impl ViperApp {
     pub fn new() -> Self {
         Self::with_settings_result(Settings::load())
     }
@@ -76,6 +79,8 @@ impl MusicApp {
             ),
         };
         let saved_path = settings.music_path.clone();
+        let discord_application_id_draft =
+            settings.discord_application_id.clone().unwrap_or_default();
         let startup_page = match settings.startup_view {
             StartupView::Home => Page::Home,
             StartupView::Albums => Page::Albums,
@@ -86,6 +91,8 @@ impl MusicApp {
             library: Library::default(),
             playback,
             settings,
+            discord_application_id_draft,
+            discord_presence: DiscordPresence::default(),
             search: String::new(),
             album_filter_query: String::new(),
             filtered_albums: Arc::new(Vec::new()),
@@ -193,7 +200,7 @@ impl MusicApp {
         self.save_settings();
     }
 
-    fn save_settings(&mut self) {
+    pub(crate) fn save_settings(&mut self) {
         if let Err(error) = self.settings.save() {
             self.error = Some(format!("Could not save settings: {error}"));
         }
@@ -273,13 +280,13 @@ fn unix_time_seconds() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-impl Default for MusicApp {
+impl Default for ViperApp {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl eframe::App for MusicApp {
+impl eframe::App for ViperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.persist_window_size(ctx);
         ctx.set_visuals(egui::Visuals::dark());
@@ -331,6 +338,23 @@ impl eframe::App for MusicApp {
         }
         self.observe_playback_track();
 
+        let current_track = self.playback.current.and_then(|index| {
+            let track = self.library.tracks.get(index)?;
+            Some((
+                index,
+                track.title.as_str(),
+                track.artist.as_str(),
+                track.album.as_str(),
+                track.duration_ms.map(Duration::from_millis),
+            ))
+        });
+        self.discord_presence.update(
+            self.settings.discord_application_id.as_deref(),
+            current_track,
+            self.playback.is_paused(),
+            self.playback.position(),
+        );
+
         crate::components::file_menu::show(ctx, self);
         crate::components::bottom_panel::show(ctx, self);
         crate::components::sidepanel::show(ctx, self);
@@ -359,7 +383,7 @@ impl eframe::App for MusicApp {
     }
 }
 
-impl Drop for MusicApp {
+impl Drop for ViperApp {
     fn drop(&mut self) {
         if let Some(cancel) = self.scan_cancel.take() {
             cancel.store(true, Ordering::Relaxed);

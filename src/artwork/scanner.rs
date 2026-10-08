@@ -221,7 +221,7 @@ fn artwork_cache_path(source_path: &Path, metadata: &fs::Metadata) -> io::Result
     hasher.write_u32(modified.subsec_nanos());
     Ok(settings_path
         .with_file_name("cached")
-        .join("art-source-v1")
+        .join("jackets")
         .join(format!("{:016x}.img", hasher.finish())))
 }
 
