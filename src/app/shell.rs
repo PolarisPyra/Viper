@@ -356,13 +356,14 @@ impl eframe::App for ViperApp {
         );
 
         crate::components::file_menu::show(ctx, self);
+        crate::components::view_header::show(ctx, self);
         crate::components::bottom_panel::show(ctx, self);
         crate::components::sidepanel::show(ctx, self);
         match self.page {
             Page::Home => views::home::show(ctx, self),
             Page::Albums => {
                 crate::components::album_track_list::show(ctx, self);
-                views::album_grid::show(ctx, self);
+                views::albums::show(ctx, self);
             }
         }
         crate::views::preferences::show(ctx, self);

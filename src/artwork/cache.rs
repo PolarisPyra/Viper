@@ -139,7 +139,11 @@ impl ArtworkCache {
 
 fn decode_album_art(bytes: &[u8]) -> Option<egui::ColorImage> {
     match image::load_from_memory(bytes) {
-        Ok(image) => Some(color_image(image)),
+        Ok(image) => Some(color_image(image.resize(
+            512,
+            512,
+            image::imageops::FilterType::Lanczos3,
+        ))),
         Err(error) => {
             eprintln!("Could not decode album artwork: {error}");
             None

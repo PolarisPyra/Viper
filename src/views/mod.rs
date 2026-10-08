@@ -1,3 +1,3 @@
-pub mod album_grid;
+pub mod albums;
 pub mod home;
 pub mod preferences;

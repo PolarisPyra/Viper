@@ -3,6 +3,7 @@ use std::{env, io, path::PathBuf, time::Duration};
 
 const INITIAL_SCHEMA: &str = include_str!("migrations/0001_initial.sql");
 const DISCORD_PRESENCE_SCHEMA: &str = include_str!("migrations/0002_discord_application_id.sql");
+const ALBUM_LAYOUT_SCHEMA: &str = include_str!("migrations/0003_album_layout.sql");
 
 pub(crate) fn database_path() -> io::Result<PathBuf> {
     Ok(config_directory()?.join("viper").join("viper.sqlite3"))
@@ -73,6 +74,16 @@ pub(crate) fn open() -> io::Result<Connection> {
             .map_err(database_error)?;
         transaction
             .pragma_update(None, "user_version", 2)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+    if version < 3 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(ALBUM_LAYOUT_SCHEMA)
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 3)
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)?;
     }

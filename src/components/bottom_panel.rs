@@ -44,17 +44,17 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
             // shifts them when the track-info column has no content.
             let controls_rect = egui::Rect::from_center_size(
                 row_rect.center(),
-                egui::vec2(126.0, row_rect.height()),
+                egui::vec2(164.0, row_rect.height()),
             );
             let previous_rect = egui::Rect::from_center_size(
-                egui::pos2(controls_rect.left() + 17.0, controls_rect.center().y),
-                egui::vec2(34.0, 32.0),
+                egui::pos2(controls_rect.left() + 23.0, controls_rect.center().y),
+                egui::vec2(46.0, 44.0),
             );
             let play_rect =
-                egui::Rect::from_center_size(controls_rect.center(), egui::vec2(38.0, 38.0));
+                egui::Rect::from_center_size(controls_rect.center(), egui::vec2(50.0, 50.0));
             let next_rect = egui::Rect::from_center_size(
-                egui::pos2(controls_rect.right() - 17.0, controls_rect.center().y),
-                egui::vec2(34.0, 32.0),
+                egui::pos2(controls_rect.right() - 23.0, controls_rect.center().y),
+                egui::vec2(46.0, 44.0),
             );
             let previous = ui.interact(
                 previous_rect,
@@ -75,14 +75,14 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_BACK,
-                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
                 if previous.hovered() {
                     egui::Color32::WHITE
                 } else {
                     egui::Color32::from_gray(190)
                 },
             );
-            ui.painter().circle_filled(play_rect.center(), 18.0, ACCENT);
+            ui.painter().circle_filled(play_rect.center(), 23.0, ACCENT);
             let icon = if app.playback.is_playing() {
                 egui_phosphor::regular::PAUSE
             } else {
@@ -92,14 +92,14 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                 play_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 icon,
-                egui::FontId::new(26.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
                 egui::Color32::WHITE,
             );
             ui.painter().text(
                 next_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_FORWARD,
-                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
                 if next.hovered() {
                     egui::Color32::WHITE
                 } else {

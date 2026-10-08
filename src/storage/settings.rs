@@ -69,6 +69,14 @@ impl AlbumSort {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlbumLayout {
+    #[default]
+    Grid,
+    List,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Settings {
@@ -87,6 +95,7 @@ pub struct Settings {
     pub album_last_played: BTreeMap<String, u64>,
     pub album_added: BTreeMap<String, u64>,
     pub discord_application_id: Option<String>,
+    pub album_layout: AlbumLayout,
 }
 
 impl Default for Settings {
@@ -107,6 +116,7 @@ impl Default for Settings {
             album_last_played: BTreeMap::new(),
             album_added: BTreeMap::new(),
             discord_application_id: None,
+            album_layout: AlbumLayout::Grid,
         }
     }
 }
@@ -120,7 +130,7 @@ impl Settings {
             .query_row(
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
-                        album_sort, sort_ascending, discord_application_id
+                        album_sort, sort_ascending, discord_application_id, album_layout
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -136,6 +146,7 @@ impl Settings {
                         row.get::<_, String>(8)?,
                         row.get::<_, bool>(9)?,
                         row.get::<_, Option<String>>(10)?,
+                        row.get::<_, String>(11)?,
                     ))
                 },
             )
@@ -154,6 +165,7 @@ impl Settings {
             album_sort,
             sort_ascending,
             discord_application_id,
+            album_layout,
         )) = stored
         {
             Self {
@@ -169,6 +181,7 @@ impl Settings {
                 album_sort: decode_setting(&album_sort)?,
                 sort_ascending,
                 discord_application_id,
+                album_layout: decode_setting(&album_layout)?,
                 ..Self::default()
             }
         } else {
@@ -249,15 +262,16 @@ impl Settings {
             "INSERT INTO app_settings (
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
-                album_sort, sort_ascending, discord_application_id
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                album_sort, sort_ascending, discord_application_id, album_layout
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
                 left_panel_width=excluded.left_panel_width, left_panel_hidden=excluded.left_panel_hidden,
                 right_panel_width=excluded.right_panel_width, volume=excluded.volume,
                 album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending,
-                discord_application_id=excluded.discord_application_id",
+                discord_application_id=excluded.discord_application_id,
+                album_layout=excluded.album_layout",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -270,6 +284,7 @@ impl Settings {
                 encode_setting(&self.album_sort)?,
                 self.sort_ascending,
                 self.discord_application_id,
+                encode_setting(&self.album_layout)?,
             ],
         ).map_err(super::database::database_error)?;
 
