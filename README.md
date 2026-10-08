@@ -40,7 +40,7 @@ The app can then be launched from the desktop environment's application menu.
 
 ## Project layout
 
-- `src/main.rs` starts the application; `src/lib.rs` exposes the app modules, and `src/desktop.rs` configures the native window, icon, and system font fallbacks.
+- `src/main.rs` starts the application; `src/lib.rs` exposes the app modules and configures the native window and icon.
 - `src/app/` owns application state and coordinates app lifecycle, library scans, and album ordering.
 - `src/ui/` contains the egui screens, shared icons, and Preferences UI.
 - `src/library/` owns track and album models, library scanning, tag reading, metadata caching, and music-folder watching.
