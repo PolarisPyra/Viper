@@ -396,13 +396,11 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let (close_rect, close_response) = ui
                                 .allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::click());
-                            if close_response.hovered() {
-                                ui.painter().rect_filled(
-                                    close_rect,
-                                    7.0,
-                                    egui::Color32::from_rgb(48, 55, 70),
-                                );
-                            }
+                            paint_album_panel_action_hover(
+                                ui,
+                                close_rect,
+                                close_response.hovered(),
+                            );
                             crate::views::icons::draw(
                                 ui.painter(),
                                 close_rect.shrink(2.0),
@@ -437,65 +435,15 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                         ui.vertical(|ui| {
                             ui.add_space(12.0);
                             ui.set_width(ui.available_width());
-                            let is_favorite = settings.favorite_albums.contains(&album_key);
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                let title_font = egui::FontId::proportional(18.0);
-                                let title_text_width = ui
-                                    .painter()
-                                    .layout_no_wrap(
-                                        album.title.clone(),
-                                        title_font.clone(),
-                                        egui::Color32::WHITE,
-                                    )
-                                    .size()
-                                    .x;
-                                let title_width =
-                                    title_text_width.min((ui.available_width() - 26.0).max(0.0));
-                                ui.add_sized(
-                                    egui::vec2(title_width, 25.0),
-                                    egui::Label::new(
-                                        egui::RichText::new(&album.title)
-                                            .size(18.0)
-                                            .color(egui::Color32::WHITE),
-                                    )
-                                    .halign(egui::Align::Min)
-                                    .truncate(),
-                                );
-                                let (rect, response) = ui.allocate_exact_size(
-                                    egui::vec2(22.0, 24.0),
-                                    egui::Sense::click(),
-                                );
-                                crate::views::icons::draw(
-                                    ui.painter(),
-                                    rect.shrink(2.0),
-                                    if is_favorite {
-                                        Icon::HeartFilled
-                                    } else {
-                                        Icon::Heart
-                                    },
-                                    if is_favorite {
-                                        egui::Color32::from_rgb(242, 83, 103)
-                                    } else {
-                                        egui::Color32::from_rgb(151, 105, 112)
-                                    },
-                                );
-                                if response
-                                    .on_hover_text(if is_favorite {
-                                        "Remove from favorites"
-                                    } else {
-                                        "Add to favorites"
-                                    })
-                                    .clicked()
-                                {
-                                    if is_favorite {
-                                        settings.favorite_albums.remove(&album_key);
-                                    } else {
-                                        settings.favorite_albums.insert(album_key.clone());
-                                    }
-                                    settings_changed = true;
-                                }
-                            });
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&album.title)
+                                        .size(18.0)
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .truncate(),
+                            );
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(&album.artist)
@@ -511,43 +459,100 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                 .get(&album_key)
                                 .copied()
                                 .unwrap_or_default();
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 1.0;
-                                for value in 1..=5 {
-                                    let (rect, response) = ui.allocate_exact_size(
-                                        egui::vec2(22.0, 24.0),
+                            let is_favorite = settings.favorite_albums.contains(&album_key);
+                            let rating_row_width = ui.available_width();
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(rating_row_width, 24.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let rating_row_rect = ui.max_rect();
+                                    ui.spacing_mut().item_spacing.x = 1.0;
+                                    for value in 1..=5 {
+                                        let (rect, response) = ui.allocate_exact_size(
+                                            egui::vec2(22.0, 24.0),
+                                            egui::Sense::click(),
+                                        );
+                                        crate::views::icons::draw(
+                                            ui.painter(),
+                                            rect.shrink(2.0),
+                                            if value <= rating {
+                                                Icon::StarFilled
+                                            } else {
+                                                Icon::Star
+                                            },
+                                            if value <= rating {
+                                                egui::Color32::from_rgb(255, 196, 74)
+                                            } else {
+                                                egui::Color32::from_rgb(116, 110, 94)
+                                            },
+                                        );
+                                        let clear_rating = value == rating;
+                                        let tooltip = if clear_rating {
+                                            "Clear rating".to_owned()
+                                        } else {
+                                            format!("Rate {value} out of 5")
+                                        };
+                                        if response.on_hover_text(tooltip).clicked() {
+                                            if clear_rating {
+                                                settings.album_ratings.remove(&album_key);
+                                            } else {
+                                                settings
+                                                    .album_ratings
+                                                    .insert(album_key.clone(), value);
+                                            }
+                                            settings_changed = true;
+                                        }
+                                    }
+                                    let favorite_rect = egui::Rect::from_center_size(
+                                        egui::pos2(
+                                            rating_row_rect.right() - 15.0,
+                                            rating_row_rect.center().y,
+                                        ),
+                                        egui::vec2(30.0, 30.0),
+                                    );
+                                    let response = ui.interact(
+                                        favorite_rect,
+                                        ui.id().with("album-favorite-heart"),
                                         egui::Sense::click(),
+                                    );
+                                    paint_album_panel_action_hover(
+                                        ui,
+                                        favorite_rect,
+                                        response.hovered(),
                                     );
                                     crate::views::icons::draw(
                                         ui.painter(),
-                                        rect.shrink(2.0),
-                                        if value <= rating {
-                                            Icon::StarFilled
+                                        favorite_rect.shrink(2.0),
+                                        if is_favorite {
+                                            Icon::HeartFilled
                                         } else {
-                                            Icon::Star
+                                            Icon::Heart
                                         },
-                                        if value <= rating {
-                                            egui::Color32::from_rgb(255, 196, 74)
+                                        if is_favorite {
+                                            egui::Color32::from_rgb(242, 83, 103)
+                                        } else if response.hovered() {
+                                            egui::Color32::WHITE
                                         } else {
-                                            egui::Color32::from_rgb(116, 110, 94)
+                                            egui::Color32::from_gray(180)
                                         },
                                     );
-                                    let clear_rating = value == rating;
-                                    let tooltip = if clear_rating {
-                                        "Clear rating".to_owned()
-                                    } else {
-                                        format!("Rate {value} out of 5")
-                                    };
-                                    if response.on_hover_text(tooltip).clicked() {
-                                        if clear_rating {
-                                            settings.album_ratings.remove(&album_key);
+                                    if response
+                                        .on_hover_text(if is_favorite {
+                                            "Remove from favorites"
                                         } else {
-                                            settings.album_ratings.insert(album_key.clone(), value);
+                                            "Add to favorites"
+                                        })
+                                        .clicked()
+                                    {
+                                        if is_favorite {
+                                            settings.favorite_albums.remove(&album_key);
+                                        } else {
+                                            settings.favorite_albums.insert(album_key.clone());
                                         }
                                         settings_changed = true;
                                     }
-                                }
-                            });
+                                },
+                            );
                         });
                     });
 
@@ -690,6 +695,13 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
         if let Err(error) = app.settings.save() {
             app.error = Some(format!("Could not save settings: {error}"));
         }
+    }
+}
+
+fn paint_album_panel_action_hover(ui: &egui::Ui, rect: egui::Rect, hovered: bool) {
+    if hovered {
+        ui.painter()
+            .rect_filled(rect, 7.0, egui::Color32::from_rgb(48, 55, 70));
     }
 }
 

@@ -210,7 +210,7 @@ pub fn draw(painter: &egui::Painter, rect: egui::Rect, icon: Icon, color: egui::
         }
         Icon::SortAscending => draw_sort(painter, center, stroke, true),
         Icon::SortDescending => draw_sort(painter, center, stroke, false),
-        Icon::Heart => draw_glyph(painter, center, "♡", 16.0, color),
+        Icon::Heart => draw_glyph(painter, center, "♡", 20.0, color),
         Icon::HeartFilled => draw_glyph(painter, center, "♥", 20.0, color),
         Icon::Star => draw_glyph(painter, center, "☆", 21.0, color),
         Icon::StarFilled => draw_glyph(painter, center, "★", 18.0, color),
