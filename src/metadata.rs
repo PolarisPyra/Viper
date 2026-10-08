@@ -1,4 +1,4 @@
-use crate::caching::TrackMetadataCache;
+use crate::{caching::TrackMetadataCache, storage::settings::Settings};
 use lofty::{
     file::{AudioFile, TaggedFileExt},
     tag::ItemKey,
@@ -6,22 +6,24 @@ use lofty::{
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, BTreeMap, HashMap, HashSet},
     fs,
-    io::Cursor,
+    hash::Hasher,
+    io::{self, Cursor, ErrorKind},
     path::{Path, PathBuf},
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, UNIX_EPOCH},
 };
 
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "oga", "opus", "wav", "m4a", "aac", "aiff", "wma", "ape", "wv", "dsf",
     "dff", "webm",
 ];
+static ARTWORK_CACHE_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Track {
@@ -394,7 +396,7 @@ fn cover_for_track(track: &Track) -> Option<Arc<[u8]>> {
                 None
             }
         })
-        .or_else(|| extract_embedded_art(&track.path).and_then(|bytes| prepare_cover(&bytes)))
+        .or_else(|| prepared_cover_for_track(&track.path))
         .map(Arc::from)
 }
 
@@ -695,8 +697,146 @@ fn find_cover_in(folder: &Path) -> Option<Vec<u8>> {
         "artwork.jpg",
     ]
     .iter()
-    .filter_map(|name| fs::read(folder.join(name)).ok())
-    .find_map(|bytes| prepare_cover(&bytes))
+    .find_map(|name| prepared_cover_for_source(&folder.join(name)))
+}
+
+fn prepared_cover_for_track(path: &Path) -> Option<Vec<u8>> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            eprintln!(
+                "Could not inspect audio file for artwork cache {}: {error}",
+                path.display()
+            );
+            return extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes));
+        }
+    };
+    let cache_path = match artwork_cache_path(path, &metadata) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("Could not locate album artwork cache: {error}");
+            return extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes));
+        }
+    };
+    read_or_create_prepared_cover(&cache_path, || {
+        extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes))
+    })
+}
+
+fn prepared_cover_for_source(path: &Path) -> Option<Vec<u8>> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => return None,
+        Err(error) if error.kind() == ErrorKind::NotFound => return None,
+        Err(error) => {
+            eprintln!(
+                "Could not inspect album artwork source {}: {error}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    let cache_path = match artwork_cache_path(path, &metadata) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("Could not locate album artwork cache: {error}");
+            return fs::read(path).ok().and_then(|bytes| prepare_cover(&bytes));
+        }
+    };
+    read_or_create_prepared_cover(&cache_path, || match fs::read(path) {
+        Ok(bytes) => prepare_cover(&bytes),
+        Err(error) => {
+            eprintln!(
+                "Could not read album artwork source {}: {error}",
+                path.display()
+            );
+            None
+        }
+    })
+}
+
+fn read_or_create_prepared_cover(
+    cache_path: &Path,
+    create: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
+    match fs::read(cache_path) {
+        Ok(bytes) => {
+            if image::load_from_memory(&bytes).is_ok() {
+                return Some(bytes);
+            }
+            eprintln!(
+                "Invalid prepared artwork cache {}, rebuilding it",
+                cache_path.display()
+            );
+            if let Err(error) = fs::remove_file(cache_path) {
+                if error.kind() != ErrorKind::NotFound {
+                    eprintln!(
+                        "Could not remove invalid album artwork cache {}: {error}",
+                        cache_path.display()
+                    );
+                }
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => eprintln!(
+            "Could not read album artwork cache {}: {error}",
+            cache_path.display()
+        ),
+    }
+
+    let bytes = create()?;
+    let Some(directory) = cache_path.parent() else {
+        eprintln!("Album artwork cache path has no parent directory");
+        return Some(bytes);
+    };
+    if let Err(error) = fs::create_dir_all(directory) {
+        eprintln!(
+            "Could not create album artwork cache {}: {error}",
+            directory.display()
+        );
+        return Some(bytes);
+    }
+    let temporary_id = ARTWORK_CACHE_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+    let temporary_path = cache_path.with_extension(format!("{temporary_id}.tmp"));
+    if let Err(error) = fs::write(&temporary_path, &bytes) {
+        eprintln!(
+            "Could not write album artwork cache {}: {error}",
+            temporary_path.display()
+        );
+        return Some(bytes);
+    }
+    if let Err(error) = fs::rename(&temporary_path, cache_path) {
+        eprintln!(
+            "Could not save album artwork cache {}: {error}",
+            cache_path.display()
+        );
+        if let Err(remove_error) = fs::remove_file(&temporary_path) {
+            if remove_error.kind() != ErrorKind::NotFound {
+                eprintln!(
+                    "Could not remove temporary album artwork cache {}: {remove_error}",
+                    temporary_path.display()
+                );
+            }
+        }
+    }
+    Some(bytes)
+}
+
+fn artwork_cache_path(source_path: &Path, metadata: &fs::Metadata) -> io::Result<PathBuf> {
+    let modified = metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?;
+    let settings_path = Settings::file_path()?;
+    let mut hasher = DefaultHasher::new();
+    hasher.write(source_path.as_os_str().to_string_lossy().as_bytes());
+    hasher.write_u64(metadata.len());
+    hasher.write_u64(modified.as_secs());
+    hasher.write_u32(modified.subsec_nanos());
+    Ok(settings_path
+        .with_file_name("cached")
+        .join("art-source-v1")
+        .join(format!("{:016x}.img", hasher.finish())))
 }
 
 fn prepare_cover(bytes: &[u8]) -> Option<Vec<u8>> {

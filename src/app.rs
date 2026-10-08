@@ -10,7 +10,10 @@ use crate::{
 };
 use eframe::egui;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet, VecDeque},
+    fs,
+    hash::Hasher,
+    io::{self, Cursor, ErrorKind},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -19,6 +22,8 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+static ARTWORK_CACHE_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
@@ -582,15 +587,7 @@ impl MusicApp {
                 if std::thread::Builder::new()
                     .name("album-art-decode".into())
                     .spawn(move || {
-                        let decoded = image::load_from_memory(&bytes)
-                            .ok()
-                            .map(|image| image.into_rgba8())
-                            .map(|image| {
-                                egui::ColorImage::from_rgba_unmultiplied(
-                                    [image.width() as usize, image.height() as usize],
-                                    image.as_raw(),
-                                )
-                            });
+                        let decoded = decode_album_art(&bytes);
                         let _ = sender.send((epoch, album_index, decoded));
                         workers.fetch_sub(1, Ordering::Relaxed);
                         repaint.request_repaint();
@@ -639,6 +636,118 @@ impl MusicApp {
             self.texture_lru.push_back(album_index);
         }
     }
+}
+
+fn decode_album_art(bytes: &[u8]) -> Option<egui::ColorImage> {
+    let cache_path = match album_art_cache_path(bytes) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            eprintln!("Could not locate album artwork cache: {error}");
+            None
+        }
+    };
+
+    if let Some(path) = &cache_path {
+        match fs::read(path) {
+            Ok(cached_bytes) => match image::load_from_memory(&cached_bytes) {
+                Ok(image) => return Some(color_image(image)),
+                Err(error) => {
+                    eprintln!(
+                        "Could not decode cached album artwork {}: {error}",
+                        path.display()
+                    );
+                    if let Err(remove_error) = fs::remove_file(path) {
+                        if remove_error.kind() != ErrorKind::NotFound {
+                            eprintln!(
+                                "Could not remove invalid album artwork cache {}: {remove_error}",
+                                path.display()
+                            );
+                        }
+                    }
+                }
+            },
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => eprintln!(
+                "Could not read album artwork cache {}: {error}",
+                path.display()
+            ),
+        }
+    }
+
+    let image = match image::load_from_memory(bytes) {
+        Ok(image) => image.into_rgba8(),
+        Err(error) => {
+            eprintln!("Could not decode album artwork: {error}");
+            return None;
+        }
+    };
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    );
+
+    if let Some(path) = cache_path {
+        if let Some(directory) = path.parent() {
+            if let Err(error) = fs::create_dir_all(directory) {
+                eprintln!(
+                    "Could not create album artwork cache {}: {error}",
+                    directory.display()
+                );
+            } else {
+                let mut encoded = Vec::new();
+                match image::DynamicImage::ImageRgba8(image)
+                    .write_to(&mut Cursor::new(&mut encoded), image::ImageFormat::Png)
+                {
+                    Ok(()) => {
+                        let temporary_id = ARTWORK_CACHE_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+                        let temporary_path = path.with_extension(format!("{temporary_id}.tmp"));
+                        if let Err(error) = fs::write(&temporary_path, encoded) {
+                            eprintln!(
+                                "Could not write album artwork cache {}: {error}",
+                                temporary_path.display()
+                            );
+                        } else if let Err(error) = fs::rename(&temporary_path, &path) {
+                            eprintln!(
+                                "Could not save album artwork cache {}: {error}",
+                                path.display()
+                            );
+                            if let Err(remove_error) = fs::remove_file(&temporary_path) {
+                                if remove_error.kind() != ErrorKind::NotFound {
+                                    eprintln!(
+                                        "Could not remove temporary artwork cache {}: {remove_error}",
+                                        temporary_path.display()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("Could not encode album artwork cache: {error}");
+                    }
+                }
+            }
+        }
+    }
+
+    Some(color_image)
+}
+
+fn color_image(image: image::DynamicImage) -> egui::ColorImage {
+    let image = image.into_rgba8();
+    egui::ColorImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    )
+}
+
+fn album_art_cache_path(bytes: &[u8]) -> io::Result<PathBuf> {
+    let settings_path = Settings::file_path()?;
+    let mut hasher = DefaultHasher::new();
+    hasher.write(bytes);
+    Ok(settings_path
+        .with_file_name("cached")
+        .join("art-v1")
+        .join(format!("{:016x}.png", hasher.finish())))
 }
 
 pub(crate) fn album_sort_key(artist: &str, title: &str) -> String {

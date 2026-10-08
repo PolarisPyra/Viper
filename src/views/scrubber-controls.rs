@@ -3,6 +3,7 @@ use crate::{
     views::icons::{self, Icon},
 };
 use eframe::egui;
+use egui::emath::GuiRounding;
 use std::time::Duration;
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
@@ -167,6 +168,10 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 .rect_filled(volume_track, 2.0, egui::Color32::from_rgb(54, 58, 69));
             let volume_fraction = app.settings.volume as f32 / 100.0;
             let volume_x = volume_track.left() + volume_track.width() * volume_fraction;
+            let volume_thumb_center = egui::pos2(
+                volume_x.round_to_pixel_center(ui.pixels_per_point()),
+                volume_track.center().y,
+            );
             ui.painter().rect_filled(
                 egui::Rect::from_min_max(
                     volume_track.min,
@@ -175,13 +180,9 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 2.0,
                 ACCENT,
             );
-            ui.painter().circle_filled(
-                egui::pos2(volume_x, volume_track.center().y),
-                if volume_response.hovered() || volume_response.dragged() {
-                    5.0
-                } else {
-                    3.5
-                },
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(volume_thumb_center, egui::vec2(6.0, 12.0)),
+                3.0,
                 egui::Color32::WHITE,
             );
             if volume_response.clicked() || volume_response.dragged() {
@@ -242,13 +243,13 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 ui.painter().rect_filled(progress_rect, 2.0, ACCENT);
                 let knob_x = track_rect.left() + track_rect.width() * fraction;
                 if current.is_some() && duration.is_some() {
-                    ui.painter().circle_filled(
-                        egui::pos2(knob_x, rect.center().y),
-                        if response.hovered() || response.dragged() {
-                            5.0
-                        } else {
-                            3.5
-                        },
+                    let thumb_center = egui::pos2(
+                        knob_x.round_to_pixel_center(ui.pixels_per_point()),
+                        rect.center().y,
+                    );
+                    ui.painter().rect_filled(
+                        egui::Rect::from_center_size(thumb_center, egui::vec2(6.0, 12.0)),
+                        3.0,
                         egui::Color32::WHITE,
                     );
                 }

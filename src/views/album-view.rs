@@ -581,7 +581,7 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                 );
                                 let highlight_rect = egui::Rect::from_min_max(
                                     row_rect.min,
-                                    row_rect.max - egui::vec2(20.0, 0.0),
+                                    row_rect.max - egui::vec2(12.0, 0.0),
                                 );
                                 let playing = playback.current == Some(track_index);
                                 let selected = *selected_track == Some(track_index);
