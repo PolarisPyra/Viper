@@ -1,6 +1,6 @@
 # Viper
 
-A desktop music player built with Rust and egui for browsing an album-art library and playing tracks with Symphonia-backed decoding.
+A desktop music player built with Rust and egui, centered on an album-art-focused browsing experience for exploring your library and playing tracks with Symphonia-backed decoding.
 
 ## Requirements
 
