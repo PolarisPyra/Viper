@@ -200,7 +200,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                             1.0_f32,
                             egui::Color32::from_rgb(43, 48, 61),
                         ))
-                        .corner_radius(9.0)
+                        .corner_radius(3.0)
                         .inner_margin(egui::Margin::symmetric(10, 5))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {

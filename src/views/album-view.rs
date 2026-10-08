@@ -200,7 +200,7 @@ fn show_grid(ctx: &egui::Context, ui: &mut egui::Ui, app: &mut MusicApp) {
                                     egui::Color32::TRANSPARENT
                                 })
                                 .inner_margin(egui::Margin::same(6))
-                                .corner_radius(10)
+                                .corner_radius(3)
                                 .show(ui, |ui| {
                                     let art_rect =
                                         ui.allocate_space(egui::vec2(art_size, art_size)).1;
@@ -588,7 +588,7 @@ pub fn show_details(ctx: &egui::Context, app: &mut MusicApp) {
                                 if selected {
                                     ui.painter().rect_filled(
                                         highlight_rect,
-                                        8.0,
+                                        3.0,
                                         egui::Color32::from_rgb(42, 39, 59),
                                     );
                                 }

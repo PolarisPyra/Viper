@@ -8,7 +8,6 @@ use eframe::egui;
 const SIDEBAR: egui::Color32 = egui::Color32::from_rgb(17, 20, 28);
 const TEXT: egui::Color32 = egui::Color32::from_rgb(221, 225, 236);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(130, 137, 153);
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     let panel_width = if app.settings.left_panel_hidden {
@@ -32,60 +31,6 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             ui.add_space(8.0);
             nav_item(ui, "Home", Icon::Home, Page::Home, app);
             nav_item(ui, "Albums", Icon::Albums, Page::Albums, app);
-
-            ui.add_space(30.0);
-            ui.horizontal(|ui| {
-                section_label(ui, "YOUR LIBRARY");
-                let album_count = app
-                    .library
-                    .albums
-                    .iter()
-                    .filter(|album| !album.tracks.is_empty())
-                    .count();
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{album_count}"))
-                            .size(10.0)
-                            .color(MUTED),
-                    );
-                });
-            });
-            ui.add_space(9.0);
-            let stats_content_width = (ui.available_width() - 22.0).max(0.0);
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgb(24, 28, 38))
-                .corner_radius(9.0)
-                .inner_margin(egui::Margin::symmetric(11, 10))
-                .show(ui, |ui| {
-                    ui.set_min_width(stats_content_width);
-                    ui.horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, 7.0, egui::Color32::from_rgb(47, 42, 68));
-                        icons::draw(ui.painter(), rect.shrink(6.0), Icon::Album, ACCENT);
-                        ui.add_space(3.0);
-                        ui.vertical(|ui| {
-                            let album_count = app
-                                .library
-                                .albums
-                                .iter()
-                                .filter(|album| !album.tracks.is_empty())
-                                .count();
-                            ui.label(
-                                egui::RichText::new(format!("{} tracks", app.library.tracks.len()))
-                                    .size(12.0)
-                                    .strong()
-                                    .color(TEXT),
-                            );
-                            ui.label(
-                                egui::RichText::new(format!("{} albums", album_count))
-                                    .size(10.0)
-                                    .color(MUTED),
-                            );
-                        });
-                    });
-                });
         });
 
     // Only save width if panel is not hidden
@@ -122,7 +67,7 @@ fn nav_item(ui: &mut egui::Ui, label: &str, icon: Icon, page: Page, app: &mut Mu
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 8.0, fill);
+    ui.painter().rect_filled(rect, 3.0, fill);
     let tint = if selected { TEXT } else { MUTED };
     let icon_rect =
         egui::Rect::from_min_size(rect.min + egui::vec2(13.0, 11.0), egui::vec2(18.0, 18.0));
