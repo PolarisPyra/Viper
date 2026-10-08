@@ -40,9 +40,9 @@ The app can then be launched from the desktop environment's application menu.
 
 ## Project layout
 
-- `src/main.rs` starts the application; `src/lib.rs` exposes the app modules and configures the native window and icon.
-- `src/app/` owns application state and coordinates app lifecycle, library scans, and album ordering.
-- `src/ui/` contains the egui screens, shared icons, and Preferences UI.
-- `src/library/` owns track and album models, library scanning, tag reading, metadata caching, and music-folder watching.
-- `src/artwork/` discovers and prepares cover art and manages decoded artwork textures.
-- `src/playback/` controls `ffplay`; `src/storage/` loads and saves settings.
+- `src/main.rs` starts the application; `src/lib.rs` exposes modules and configures the native window and icon.
+- `src/app/` coordinates application state and app-level scan lifecycle in `scanner.rs`.
+- `src/views/` contains peer `home_view` and `album_view` screens; `src/components/` contains shared UI elements used across the views.
+- `src/library/` owns models, `sorting`, `analyzer`, `modifications`, audio-file helpers, tag reading, metadata caching, and folder watching.
+- `src/artwork/` scans for and prepares cover art in `scanner.rs`, and manages decoded artwork textures in `cache.rs`.
+- `src/playback/player.rs` controls `ffplay`; `src/storage/settings.rs` loads and saves settings.

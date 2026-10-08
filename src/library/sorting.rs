@@ -7,7 +7,7 @@ pub(crate) fn album_sort_key(artist: &str, title: &str) -> String {
     format!("{artist}\0{title}")
 }
 
-pub(super) fn sort_indices(
+pub(crate) fn sort_indices(
     indices: &mut [usize],
     albums: &[Album],
     tracks: &[Track],

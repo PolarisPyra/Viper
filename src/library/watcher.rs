@@ -1,3 +1,4 @@
+use super::is_audio_path;
 use eframe::egui;
 use notify::{
     event::{ModifyKind, RenameMode},
@@ -8,11 +9,6 @@ use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, TryRecvError},
 };
-
-const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "ogg", "oga", "opus", "wav", "m4a", "aac", "aiff", "wma", "ape", "wv", "dsf",
-    "dff", "webm",
-];
 
 pub struct FileWatcher {
     // Keeping the watcher alive keeps the recursive OS watch registered.
@@ -89,14 +85,4 @@ impl FileWatcher {
             })
             .collect())
     }
-}
-
-fn is_audio_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            AUDIO_EXTENSIONS
-                .iter()
-                .any(|supported| extension.eq_ignore_ascii_case(supported))
-        })
 }

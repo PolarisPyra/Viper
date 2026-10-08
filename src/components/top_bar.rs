@@ -1,5 +1,5 @@
 use crate::app::{MusicApp, Page};
-use crate::ui::icons::{self, Icon};
+use crate::components::icons::{self, Icon};
 use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {

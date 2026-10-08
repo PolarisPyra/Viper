@@ -1,5 +1,4 @@
-pub mod general;
-
+use super::general;
 use crate::app::MusicApp;
 use eframe::egui;
 
@@ -57,10 +56,10 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                         ui.painter()
                             .rect_filled(rect, 8.0, egui::Color32::from_rgb(47, 52, 67));
                     }
-                    crate::ui::icons::draw(
+                    crate::components::icons::draw(
                         ui.painter(),
                         rect.shrink(8.0),
-                        crate::ui::icons::Icon::Close,
+                        crate::components::icons::Icon::Close,
                         if response.hovered() { TEXT } else { MUTED },
                     );
                     if response.on_hover_text("Close preferences").clicked() {

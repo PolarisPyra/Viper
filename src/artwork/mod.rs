@@ -1,5 +1,5 @@
 mod cache;
-mod source;
+mod scanner;
 
 pub(crate) use cache::ArtworkCache;
-pub(crate) use source::cover_for_track;
+pub(crate) use scanner::cover_for_track;

@@ -1,6 +1,6 @@
 use crate::{
     app::MusicApp,
-    ui::icons::{self, Icon},
+    components::icons::{self, Icon},
 };
 use eframe::egui;
 use egui::emath::GuiRounding;

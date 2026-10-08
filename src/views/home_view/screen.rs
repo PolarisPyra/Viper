@@ -1,7 +1,8 @@
 use crate::{
-    app::{album_sort_key, MusicApp, Page},
+    app::{MusicApp, Page},
+    components::icons::{self, Icon},
+    library::sorting::album_sort_key,
     library::Album,
-    ui::icons::{self, Icon},
 };
 use eframe::egui;
 use std::collections::BTreeMap;
