@@ -73,6 +73,7 @@ impl AlbumSort {
 #[serde(default)]
 pub struct Settings {
     pub music_path: Option<PathBuf>,
+    pub window_size: Option<[f32; 2]>,
     pub startup_view: StartupView,
     pub left_panel_width: f32,
     pub left_panel_hidden: bool,
@@ -91,6 +92,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             music_path: None,
+            window_size: None,
             startup_view: StartupView::Home,
             left_panel_width: 240.0,
             left_panel_hidden: false,

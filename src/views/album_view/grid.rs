@@ -1,5 +1,4 @@
 use crate::app::MusicApp;
-use crate::components::icons::{self, Icon};
 use crate::storage::settings::AlbumSort;
 use eframe::egui;
 
@@ -82,14 +81,15 @@ pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
                         ui.painter()
                             .rect_filled(rect, 6.0, egui::Color32::from_rgb(35, 39, 50));
                     }
-                    icons::draw(
-                        ui.painter(),
-                        rect.shrink(7.0),
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
                         if direction {
-                            Icon::SortAscending
+                            egui_phosphor::regular::SORT_ASCENDING
                         } else {
-                            Icon::SortDescending
+                            egui_phosphor::regular::SORT_DESCENDING
                         },
+                        egui::FontId::new(18.0, egui::FontFamily::Name("phosphor".into())),
                         if response.hovered() {
                             egui::Color32::WHITE
                         } else {

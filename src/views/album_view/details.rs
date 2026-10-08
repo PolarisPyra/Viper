@@ -1,5 +1,4 @@
 use crate::app::MusicApp;
-use crate::components::icons::Icon;
 use eframe::egui;
 
 pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
@@ -78,10 +77,11 @@ pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                 close_rect,
                                 close_response.hovered(),
                             );
-                            crate::components::icons::draw(
-                                ui.painter(),
-                                close_rect.shrink(2.0),
-                                crate::components::icons::Icon::Close,
+                            ui.painter().text(
+                                close_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                egui_phosphor::regular::X,
+                                egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
                                 if close_response.hovered() {
                                     egui::Color32::WHITE
                                 } else {
@@ -149,14 +149,22 @@ pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                             egui::vec2(22.0, 24.0),
                                             egui::Sense::click(),
                                         );
-                                        crate::components::icons::draw(
-                                            ui.painter(),
-                                            rect.shrink(2.0),
-                                            if value <= rating {
-                                                Icon::StarFilled
-                                            } else {
-                                                Icon::Star
-                                            },
+                                        let (glyph, font_family) = if value <= rating {
+                                            (
+                                                egui_phosphor::fill::STAR,
+                                                egui::FontFamily::Name("phosphor-fill".into()),
+                                            )
+                                        } else {
+                                            (
+                                                egui_phosphor::regular::STAR,
+                                                egui::FontFamily::Proportional,
+                                            )
+                                        };
+                                        ui.painter().text(
+                                            rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            glyph,
+                                            egui::FontId::new(18.0, font_family),
                                             if value <= rating {
                                                 egui::Color32::from_rgb(255, 196, 74)
                                             } else {
@@ -197,14 +205,22 @@ pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                         favorite_rect,
                                         response.hovered(),
                                     );
-                                    crate::components::icons::draw(
-                                        ui.painter(),
-                                        favorite_rect.shrink(2.0),
-                                        if is_favorite {
-                                            Icon::HeartFilled
-                                        } else {
-                                            Icon::Heart
-                                        },
+                                    let (favorite_glyph, favorite_font) = if is_favorite {
+                                        (
+                                            egui_phosphor::fill::HEART,
+                                            egui::FontFamily::Name("phosphor-fill".into()),
+                                        )
+                                    } else {
+                                        (
+                                            egui_phosphor::regular::HEART,
+                                            egui::FontFamily::Proportional,
+                                        )
+                                    };
+                                    ui.painter().text(
+                                        favorite_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        favorite_glyph,
+                                        egui::FontId::new(20.0, favorite_font),
                                         if is_favorite {
                                             egui::Color32::from_rgb(242, 83, 103)
                                         } else if response.hovered() {
@@ -278,14 +294,18 @@ pub(super) fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                     egui::vec2(20.0, 20.0),
                                 );
                                 if playing {
-                                    crate::components::icons::draw(
-                                        ui.painter(),
-                                        number_or_icon,
+                                    ui.painter().text(
+                                        number_or_icon.center(),
+                                        egui::Align2::CENTER_CENTER,
                                         if playback.is_playing() {
-                                            crate::components::icons::Icon::Pause
+                                            egui_phosphor::regular::PAUSE
                                         } else {
-                                            crate::components::icons::Icon::Play
+                                            egui_phosphor::regular::PLAY
                                         },
+                                        egui::FontId::new(
+                                            18.0,
+                                            egui::FontFamily::Name("phosphor".into()),
+                                        ),
                                         egui::Color32::from_rgb(174, 149, 255),
                                     );
                                 } else {

@@ -1,7 +1,4 @@
-use crate::{
-    app::MusicApp,
-    components::icons::{self, Icon},
-};
+use crate::app::MusicApp;
 use eframe::egui;
 use egui::emath::GuiRounding;
 use std::time::Duration;
@@ -74,10 +71,11 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 egui::Id::new("player-next"),
                 egui::Sense::click(),
             );
-            icons::draw(
-                ui.painter(),
-                previous_rect,
-                Icon::Previous,
+            ui.painter().text(
+                previous_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::SKIP_BACK,
+                egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
                 if previous.hovered() {
                     egui::Color32::WHITE
                 } else {
@@ -86,15 +84,22 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
             );
             ui.painter().circle_filled(play_rect.center(), 17.0, ACCENT);
             let icon = if app.playback.is_playing() {
-                Icon::Pause
+                egui_phosphor::regular::PAUSE
             } else {
-                Icon::Play
+                egui_phosphor::regular::PLAY
             };
-            icons::draw(ui.painter(), play_rect, icon, egui::Color32::WHITE);
-            icons::draw(
-                ui.painter(),
-                next_rect,
-                Icon::Next,
+            ui.painter().text(
+                play_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                icon,
+                egui::FontId::new(24.0, egui::FontFamily::Name("phosphor".into())),
+                egui::Color32::WHITE,
+            );
+            ui.painter().text(
+                next_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::SKIP_FORWARD,
+                egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
                 if next.hovered() {
                     egui::Color32::WHITE
                 } else {
@@ -145,10 +150,16 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 volume_area.min + egui::vec2(0.0, 4.0),
                 egui::vec2(22.0, 22.0),
             );
-            icons::draw(
-                ui.painter(),
-                volume_icon,
-                Icon::Volume,
+            let volume_glyph = match app.settings.volume {
+                0 => egui_phosphor::regular::SPEAKER_X,
+                1..=35 => egui_phosphor::regular::SPEAKER_LOW,
+                _ => egui_phosphor::regular::SPEAKER_HIGH,
+            };
+            ui.painter().text(
+                volume_icon.center(),
+                egui::Align2::CENTER_CENTER,
+                volume_glyph,
+                egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
                 egui::Color32::from_gray(175),
             );
             let volume_track_area = egui::Rect::from_min_max(

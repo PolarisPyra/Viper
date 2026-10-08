@@ -1,6 +1,5 @@
 use crate::{
     app::{MusicApp, Page},
-    components::icons::{self, Icon},
     library::sorting::album_sort_key,
     library::Album,
 };
@@ -172,7 +171,13 @@ fn onboarding(ui: &mut egui::Ui, app: &mut MusicApp) {
                     ui.allocate_exact_size(egui::vec2(72.0, 72.0), egui::Sense::hover());
                 ui.painter()
                     .rect_filled(rect, 14.0, egui::Color32::from_rgb(48, 42, 72));
-                icons::draw(ui.painter(), rect.shrink(19.0), Icon::Music, ACCENT);
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    egui_phosphor::regular::MUSIC_NOTE,
+                    egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
+                    ACCENT,
+                );
                 ui.add_space(20.0);
                 ui.vertical(|ui| {
                     ui.label(
@@ -343,7 +348,13 @@ fn album_section(
                             7.0,
                             egui::Color32::from_rgb(39, 43, 56),
                         );
-                        icons::draw(ui.painter(), art_rect.shrink(52.0), Icon::Album, MUTED);
+                        ui.painter().text(
+                            art_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            egui_phosphor::regular::DISC,
+                            egui::FontId::new(32.0, egui::FontFamily::Name("phosphor".into())),
+                            MUTED,
+                        );
                     }
                     ui.painter().with_clip_rect(rect.shrink(7.0)).text(
                         rect.min + egui::vec2(9.0, 153.0),

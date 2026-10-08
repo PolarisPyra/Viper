@@ -1,6 +1,5 @@
 use crate::{
     app::{MusicApp, Page},
-    components::icons::{self, Icon},
     storage::settings::StartupView,
 };
 use eframe::egui;
@@ -26,8 +25,20 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                 .inner_margin(egui::Margin::symmetric(14, 10)),
         )
         .show(ctx, |ui| {
-            nav_item(ui, "Home", Icon::Home, Page::Home, app);
-            nav_item(ui, "Albums", Icon::Albums, Page::Albums, app);
+            nav_item(
+                ui,
+                "Home",
+                egui_phosphor::regular::HOUSE_SIMPLE,
+                Page::Home,
+                app,
+            );
+            nav_item(
+                ui,
+                "Albums",
+                egui_phosphor::regular::FOLDERS,
+                Page::Albums,
+                app,
+            );
         });
 
     // Only save width if panel is not hidden
@@ -51,7 +62,7 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
     }
 }
 
-fn nav_item(ui: &mut egui::Ui, label: &str, icon: Icon, page: Page, app: &mut MusicApp) {
+fn nav_item(ui: &mut egui::Ui, label: &str, icon: &str, page: Page, app: &mut MusicApp) {
     let selected = app.page == page;
     let size = egui::vec2(ui.available_width(), 40.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -64,7 +75,13 @@ fn nav_item(ui: &mut egui::Ui, label: &str, icon: Icon, page: Page, app: &mut Mu
     let icon_tint = if selected { TEXT } else { MUTED };
     let icon_rect =
         egui::Rect::from_min_size(rect.min + egui::vec2(13.0, 11.0), egui::vec2(18.0, 18.0));
-    icons::draw(ui.painter(), icon_rect, icon, icon_tint);
+    ui.painter().text(
+        icon_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::new(18.0, egui::FontFamily::Name("phosphor".into())),
+        icon_tint,
+    );
     ui.painter().text(
         rect.min + egui::vec2(43.0, rect.height() * 0.5),
         egui::Align2::LEFT_CENTER,

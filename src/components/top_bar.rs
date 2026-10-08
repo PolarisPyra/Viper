@@ -1,5 +1,4 @@
 use crate::app::{MusicApp, Page};
-use crate::components::icons::{self, Icon};
 use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
@@ -208,10 +207,14 @@ pub fn show(ctx: &egui::Context, app: &mut MusicApp) {
                                     egui::vec2(18.0, 20.0),
                                     egui::Sense::hover(),
                                 );
-                                icons::draw(
-                                    ui.painter(),
-                                    rect,
-                                    Icon::Search,
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                                    egui::FontId::new(
+                                        18.0,
+                                        egui::FontFamily::Name("phosphor".into()),
+                                    ),
                                     egui::Color32::from_gray(140),
                                 );
                                 ui.add(

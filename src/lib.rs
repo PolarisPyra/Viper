@@ -6,6 +6,8 @@ pub mod playback;
 pub mod storage;
 pub mod views;
 
+use storage::settings::Settings;
+
 const APP_ICON_PNG: &[u8] = include_bytes!("../assets/logo.png");
 
 fn load_app_fonts() -> eframe::egui::FontDefinitions {
@@ -25,6 +27,19 @@ fn load_app_fonts() -> eframe::egui::FontDefinitions {
         .entry(FontFamily::Proportional)
         .or_default()
         .insert(0, "inter".to_owned());
+    egui_phosphor::add_to_fonts(&mut definitions, egui_phosphor::Variant::Regular);
+    definitions.families.insert(
+        FontFamily::Name("phosphor".into()),
+        vec!["phosphor".to_owned()],
+    );
+    definitions.font_data.insert(
+        "phosphor-fill".to_owned(),
+        Arc::new(egui_phosphor::Variant::Fill.font_data()),
+    );
+    definitions.families.insert(
+        FontFamily::Name("phosphor-fill".into()),
+        vec!["phosphor-fill".to_owned()],
+    );
 
     let families = [
         "Noto Sans CJK JP",
@@ -64,15 +79,24 @@ fn load_app_fonts() -> eframe::egui::FontDefinitions {
 }
 
 pub fn run() -> eframe::Result<()> {
+    let settings = Settings::load();
+    let window_size = settings
+        .as_ref()
+        .ok()
+        .and_then(|settings| settings.window_size)
+        .filter(|[width, height]| width.is_finite() && height.is_finite())
+        .map(|[width, height]| [width.max(760.0), height.max(520.0)])
+        .unwrap_or([1440.0, 900.0]);
     let icon = image::load_from_memory(APP_ICON_PNG)
         .expect("failed to load assets/logo.png")
         .resize_exact(256, 256, image::imageops::FilterType::Lanczos3)
         .into_rgba8();
     let (icon_width, icon_height) = icon.dimensions();
     let options = eframe::NativeOptions {
+        persist_window: false,
         viewport: eframe::egui::ViewportBuilder::default()
             .with_app_id("musicplayer")
-            .with_inner_size([1440.0, 900.0])
+            .with_inner_size(window_size)
             .with_min_inner_size([760.0, 520.0])
             .with_icon(eframe::egui::IconData {
                 rgba: icon.into_raw(),
@@ -86,7 +110,7 @@ pub fn run() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_fonts(load_app_fonts());
-            Ok(Box::new(app::MusicApp::new()))
+            Ok(Box::new(app::MusicApp::with_settings_result(settings)))
         }),
     )
 }

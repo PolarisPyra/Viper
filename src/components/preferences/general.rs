@@ -78,23 +78,25 @@ pub fn show(ui: &mut egui::Ui, app: &mut crate::app::MusicApp) {
                 egui::StrokeKind::Inside,
             );
 
-            let center = egui::pos2(rect.left() + 18.0, rect.center().y);
-            ui.painter().circle_stroke(
-                center,
-                7.0,
-                egui::Stroke::new(
-                    1.4_f32,
-                    if is_startup {
-                        egui::Color32::from_gray(210)
-                    } else {
-                        egui::Color32::from_gray(115)
-                    },
-                ),
+            let icon_rect = egui::Rect::from_center_size(
+                egui::pos2(rect.left() + 18.0, rect.center().y),
+                egui::vec2(16.0, 16.0),
             );
-            if is_startup {
-                ui.painter()
-                    .circle_filled(center, 3.5, egui::Color32::from_gray(220));
-            }
+            ui.painter().text(
+                icon_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if is_startup {
+                    egui_phosphor::regular::RADIO_BUTTON
+                } else {
+                    egui_phosphor::regular::CIRCLE
+                },
+                egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
+                if is_startup {
+                    egui::Color32::from_gray(220)
+                } else {
+                    egui::Color32::from_gray(130)
+                },
+            );
             ui.painter().text(
                 egui::pos2(rect.left() + 36.0, rect.center().y),
                 egui::Align2::LEFT_CENTER,

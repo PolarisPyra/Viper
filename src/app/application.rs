@@ -57,11 +57,16 @@ pub struct MusicApp {
     watcher_root: Option<PathBuf>,
     pending_removed_paths: HashSet<PathBuf>,
     pub(crate) scan_progress: Arc<ScanProgress>,
+    last_window_size: Option<[f32; 2]>,
 }
 
 impl MusicApp {
     pub fn new() -> Self {
-        let (settings, settings_error) = match Settings::load() {
+        Self::with_settings_result(Settings::load())
+    }
+
+    pub(crate) fn with_settings_result(settings_result: std::io::Result<Settings>) -> Self {
+        let (settings, settings_error) = match settings_result {
             Ok(settings) => (settings, None),
             Err(error) => (
                 Settings::default(),
@@ -107,6 +112,7 @@ impl MusicApp {
             watcher_root: None,
             pending_removed_paths: HashSet::new(),
             scan_progress: Arc::new(ScanProgress::default()),
+            last_window_size: None,
         };
         if let Some(path) = saved_path {
             app.start_scan(path);
@@ -191,6 +197,21 @@ impl MusicApp {
         }
     }
 
+    fn persist_window_size(&mut self, ctx: &egui::Context) {
+        let size = ctx.input(|input| input.screen_rect.size());
+        if !size.x.is_finite() || !size.y.is_finite() || size.x < 760.0 || size.y < 520.0 {
+            return;
+        }
+        let size = [size.x.round(), size.y.round()];
+        if self.last_window_size == Some(size) && self.settings.window_size == Some(size) {
+            return;
+        }
+
+        self.last_window_size = Some(size);
+        self.settings.window_size = Some(size);
+        self.save_settings();
+    }
+
     pub(super) fn record_new_albums(&mut self) {
         let now = unix_time_seconds();
         let mut changed = false;
@@ -258,6 +279,7 @@ impl Default for MusicApp {
 
 impl eframe::App for MusicApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.persist_window_size(ctx);
         ctx.set_visuals(egui::Visuals::dark());
         ctx.style_mut(|style| {
             style.spacing.scroll.dormant_background_opacity = 0.0;
@@ -313,6 +335,20 @@ impl eframe::App for MusicApp {
             Page::Albums => views::album_view::show(ctx, self),
         }
         crate::components::dialogs::show_preferences(ctx, self);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        let Some(size) = self.last_window_size else {
+            return;
+        };
+        if self.settings.window_size == Some(size) {
+            return;
+        }
+
+        self.settings.window_size = Some(size);
+        if let Err(error) = self.settings.save() {
+            eprintln!("Could not save window size on exit: {error}");
+        }
     }
 }
 
