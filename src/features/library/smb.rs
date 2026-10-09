@@ -6,7 +6,8 @@ use std::{
     fs::File,
     io,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::UNIX_EPOCH,
 };
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -81,7 +82,10 @@ impl SmbSession {
             .client
             .open_with(&parsed.path, SmbOpenOptions::default().read(true))
             .map_err(|error| super::tag_reader::ReaderMetadataError::Failed(error.to_string()))?;
-        super::tag_reader::read_metadata_from_reader(remote, path)
+        super::tag_reader::read_metadata_from_reader(
+            super::smb_reader::SmbReader::new(remote),
+            path,
+        )
     }
 
     pub(crate) fn stage_file(&self, path: &Path) -> Result<PathBuf, String> {
@@ -122,38 +126,83 @@ pub(crate) fn is_smb_path(path: &std::path::Path) -> bool {
     path.to_str().is_some_and(|path| path.starts_with("smb://"))
 }
 
-pub(crate) fn scan(root: &str, auth: &SmbAuth) -> Result<Vec<PathBuf>, String> {
+pub(crate) struct SmbEntry {
+    pub path: PathBuf,
+    pub fingerprint: Option<String>,
+}
+
+pub(crate) fn scan(
+    root: &str,
+    auth: &SmbAuth,
+    cancel: &AtomicBool,
+) -> Result<Vec<SmbEntry>, String> {
     let share = SharePath::parse(root)?;
     let client = share.client(auth)?;
     let mut files = Vec::new();
     let mut directories = vec![share.path.clone()];
     while let Some(directory) = directories.pop() {
-        let entries = client
-            .list_dir(&directory)
-            .map_err(|error| error.to_string())?;
-        for entry in entries {
-            let name = entry.name();
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(Vec::new());
+        }
+        // Get validation data in the directory listing rather than statting each file.
+        // Older servers can still scan without caching if readdirplus is unavailable.
+        let entries: Vec<_> = match client.list_dirplus(&directory) {
+            Ok(entries) => entries
+                .into_iter()
+                .map(|entry| {
+                    let fingerprint = entry
+                        .mtime
+                        .duration_since(UNIX_EPOCH)
+                        .ok()
+                        .filter(|modified| !modified.is_zero())
+                        .map(|modified| {
+                            format!(
+                                "{}:{}:{:?}",
+                                entry.size,
+                                modified.as_nanos(),
+                                entry
+                                    .ctime
+                                    .duration_since(UNIX_EPOCH)
+                                    .ok()
+                                    .map(|time| time.as_nanos())
+                            )
+                        });
+                    (entry.name().to_owned(), entry.get_type(), fingerprint)
+                })
+                .collect(),
+            Err(_) => client
+                .list_dir(&directory)
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|entry| (entry.name().to_owned(), entry.get_type(), None))
+                .collect(),
+        };
+        for (name, kind, fingerprint) in entries {
+            let name = name.as_str();
             if name.is_empty() || name == "." || name == ".." {
                 continue;
             }
             let path = format!("{}/{}", directory.trim_end_matches('/'), name);
-            match entry.get_type() {
+            match kind {
                 SmbDirentType::Dir => directories.push(path),
                 SmbDirentType::File
                     if crate::features::library::is_audio_path(std::path::Path::new(name)) =>
                 {
-                    files.push(PathBuf::from(format!(
-                        "smb://{}/{}/{}",
-                        share.server,
-                        share.share.trim_start_matches('/'),
-                        path.trim_start_matches('/')
-                    )));
+                    files.push(SmbEntry {
+                        path: PathBuf::from(format!(
+                            "smb://{}/{}/{}",
+                            share.server,
+                            share.share.trim_start_matches('/'),
+                            path.trim_start_matches('/')
+                        )),
+                        fingerprint,
+                    });
                 }
                 _ => {}
             }
         }
     }
-    files.sort();
+    files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
 }
 

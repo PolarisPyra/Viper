@@ -7,6 +7,10 @@ mod modifications;
 mod scanner;
 #[cfg(target_os = "linux")]
 pub(crate) mod smb;
+#[cfg(target_os = "linux")]
+mod smb_cache;
+#[cfg(target_os = "linux")]
+mod smb_reader;
 pub(crate) mod sorting;
 pub(crate) mod state;
 pub(crate) mod symphonia;

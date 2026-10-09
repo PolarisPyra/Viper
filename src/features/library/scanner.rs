@@ -30,10 +30,11 @@ pub(crate) fn scan_library_with_auth(
     progress: &ScanProgress,
     #[cfg(target_os = "linux")] smb_auth: Option<super::smb::SmbAuth>,
 ) -> Library {
-    let cache = TrackMetadataCache::load();
     let mut refreshed_cache = TrackMetadataCache::default();
     let missing_metadata_tracks = AtomicUsize::new(0);
     let mut audio_paths = Vec::new();
+    #[cfg(target_os = "linux")]
+    let mut smb_fingerprints = HashMap::new();
     let mut skipped_empty_files = Vec::new();
     let mut scan_errors = Vec::new();
     let mut unreadable_directories = 0;
@@ -41,12 +42,24 @@ pub(crate) fn scan_library_with_auth(
     let is_smb = super::smb::is_smb_path(root);
     #[cfg(not(target_os = "linux"))]
     let is_smb = false;
+    let cache = if is_smb {
+        TrackMetadataCache::default()
+    } else {
+        TrackMetadataCache::load()
+    };
     if is_smb {
         #[cfg(target_os = "linux")]
         {
             if let Some(auth) = smb_auth.as_ref() {
-                match super::smb::scan(&root.to_string_lossy(), auth) {
-                    Ok(paths) => audio_paths = paths,
+                match super::smb::scan(&root.to_string_lossy(), auth, cancel) {
+                    Ok(entries) => {
+                        for entry in entries {
+                            if let Some(fingerprint) = entry.fingerprint {
+                                smb_fingerprints.insert(entry.path.clone(), fingerprint);
+                            }
+                            audio_paths.push(entry.path);
+                        }
+                    }
                     Err(error) => {
                         eprintln!("Could not scan SMB music share: {error}");
                         unreadable_directories = 1;
@@ -74,6 +87,9 @@ pub(crate) fn scan_library_with_auth(
             }
             _ => true,
         });
+    }
+    if cancel.load(Ordering::Relaxed) {
+        return Library::default();
     }
     #[cfg(target_os = "linux")]
     let smb_session = if is_smb {
@@ -124,28 +140,52 @@ pub(crate) fn scan_library_with_auth(
         let session = smb_session
             .as_ref()
             .expect("SMB scan session was initialized");
+        let smb_cache = super::smb_cache::SmbMetadataCache::load(root);
+        let mut refreshed_smb_cache = super::smb_cache::SmbMetadataCache::default();
+        let mut cache_changed = false;
         let mut scanned = Vec::with_capacity(audio_paths.len());
         for path in &audio_paths {
             if cancel.load(Ordering::Relaxed) {
                 return Library::default();
             }
-            let mut metadata = match session.read_metadata(path) {
-                Ok(metadata) => metadata,
-                Err(super::tag_reader::ReaderMetadataError::Empty) => {
-                    skipped_empty_files.push(path.clone());
-                    progress.completed.fetch_add(1, Ordering::Relaxed);
-                    continue;
-                }
-                Err(super::tag_reader::ReaderMetadataError::Failed(error)) => {
-                    scan_errors.push(format!(
-                        "Could not read tags from SMB track {}: {error}",
-                        path.file_name().unwrap_or_default().to_string_lossy()
-                    ));
-                    super::tag_reader::empty_metadata()
-                }
+            let fingerprint = smb_fingerprints.get(path);
+            let cached = fingerprint.and_then(|fingerprint| smb_cache.get(path, fingerprint));
+            let (mut track, embedded_art, cacheable) = if let Some((track, artwork)) = cached {
+                (track, artwork, true)
+            } else {
+                cache_changed = true;
+                let (mut metadata, cacheable) = match session.read_metadata(path) {
+                    Ok(metadata) => (metadata, true),
+                    Err(super::tag_reader::ReaderMetadataError::Empty) => {
+                        skipped_empty_files.push(path.clone());
+                        progress.completed.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                    Err(super::tag_reader::ReaderMetadataError::Failed(error)) => {
+                        scan_errors.push(format!(
+                            "Could not read tags from SMB track {}: {error}",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ));
+                        (super::tag_reader::empty_metadata(), false)
+                    }
+                };
+                let artwork = metadata.artwork.take().map(Arc::<[u8]>::from);
+                (
+                    track_from_metadata(path.clone(), metadata),
+                    artwork,
+                    cacheable,
+                )
             };
-            let embedded_art = metadata.artwork.take();
-            let mut track = track_from_metadata(path.clone(), metadata);
+            // Failures must be retried on the next scan rather than becoming cache hits.
+            if cacheable {
+                if let Some(fingerprint) = fingerprint {
+                    refreshed_smb_cache.insert(
+                        fingerprint.clone(),
+                        track.clone(),
+                        embedded_art.clone(),
+                    );
+                }
+            }
             fill_missing_display_metadata(&mut track);
             if track.metadata_missing {
                 missing_metadata_tracks.fetch_add(1, Ordering::Relaxed);
@@ -157,11 +197,18 @@ pub(crate) fn scan_library_with_auth(
                             normalize_album_key(&track.album),
                             normalize_album_key(&track.album_artist),
                         ))
-                        .or_insert_with(|| Arc::from(art));
+                        .or_insert(art);
                 }
             }
             progress.completed.fetch_add(1, Ordering::Relaxed);
             scanned.push(Some((track, None)));
+        }
+        // An unchanged rescan should not rewrite potentially large artwork blobs.
+        if !cancel.load(Ordering::Relaxed)
+            && unreadable_directories == 0
+            && (cache_changed || refreshed_smb_cache.len() != smb_cache.len())
+        {
+            refreshed_smb_cache.save(root);
         }
         scanned
     } else {
@@ -198,7 +245,9 @@ pub(crate) fn scan_library_with_auth(
     if cancel.load(Ordering::Relaxed) {
         return Library::default();
     }
-    refreshed_cache.save();
+    if !is_smb {
+        refreshed_cache.save();
+    }
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
 
     let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
