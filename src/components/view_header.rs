@@ -101,5 +101,20 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                     ),
                 );
             }
+            if !app.library.skipped_empty_files.is_empty() {
+                egui::CollapsingHeader::new(
+                    egui::RichText::new(format!(
+                        "Skipped {} empty audio files (0 bytes)",
+                        app.library.skipped_empty_files.len()
+                    ))
+                    .color(egui::Color32::from_rgb(235, 194, 83)),
+                )
+                .id_salt("skipped-empty-audio-files")
+                .show(ui, |ui| {
+                    for path in &app.library.skipped_empty_files {
+                        ui.label(path.display().to_string());
+                    }
+                });
+            }
         });
 }

@@ -37,6 +37,7 @@ pub(crate) fn scan_library_with_auth(
     let mut refreshed_cache = TrackMetadataCache::default();
     let missing_metadata_tracks = AtomicUsize::new(0);
     let mut audio_paths = Vec::new();
+    let mut skipped_empty_files = Vec::new();
     let mut unreadable_directories = 0;
     #[cfg(target_os = "linux")]
     let is_smb = super::smb::is_smb_path(root);
@@ -66,6 +67,15 @@ pub(crate) fn scan_library_with_auth(
             &mut HashSet::new(),
             cancel,
         );
+    }
+    if !is_smb {
+        audio_paths.retain(|path| match fs::metadata(path) {
+            Ok(metadata) if metadata.len() == 0 => {
+                skipped_empty_files.push(path.clone());
+                false
+            }
+            _ => true,
+        });
     }
     #[cfg(target_os = "linux")]
     let smb_session = if is_smb {
@@ -123,12 +133,18 @@ pub(crate) fn scan_library_with_auth(
             }
             let mut metadata = match session.read_metadata(path) {
                 Ok(metadata) => metadata,
-                Err(error) => {
+                Err(super::tag_reader::ReaderMetadataError::Empty) => {
+                    skipped_empty_files.push(path.clone());
+                    progress.completed.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+                Err(super::tag_reader::ReaderMetadataError::Failed(error)) => {
                     return Library {
                         scan_error: Some(format!(
                             "Could not read tags from SMB track {}: {error}. The scan was stopped.",
                             path.file_name().unwrap_or_default().to_string_lossy()
                         )),
+                        skipped_empty_files,
                         ..Library::default()
                     };
                 }
@@ -261,6 +277,7 @@ pub(crate) fn scan_library_with_auth(
         unreadable_directories,
         scan_error: None,
         missing_metadata_tracks: missing_metadata_tracks.load(Ordering::Relaxed),
+        skipped_empty_files,
     }
 }
 

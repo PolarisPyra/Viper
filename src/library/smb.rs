@@ -72,17 +72,16 @@ impl SmbSession {
     pub(super) fn read_metadata(
         &self,
         path: &Path,
-    ) -> Result<super::tag_reader::TrackMetadata, String> {
-        let parsed = SharePath::parse(
-            path.to_str()
-                .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
-        )?;
+    ) -> Result<super::tag_reader::TrackMetadata, super::tag_reader::ReaderMetadataError> {
+        let parsed = SharePath::parse(path.to_str().ok_or_else(|| {
+            super::tag_reader::ReaderMetadataError::Failed("SMB path is not valid UTF-8".to_owned())
+        })?)
+        .map_err(super::tag_reader::ReaderMetadataError::Failed)?;
         let remote = self
             .client
             .open_with(&parsed.path, SmbOpenOptions::default().read(true))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| super::tag_reader::ReaderMetadataError::Failed(error.to_string()))?;
         super::tag_reader::read_metadata_from_reader(remote, path)
-            .ok_or_else(|| "could not read audio metadata from the share".to_owned())
     }
 
     pub(crate) fn stage_file(&self, path: &Path) -> Result<PathBuf, String> {

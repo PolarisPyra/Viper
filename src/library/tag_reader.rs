@@ -5,7 +5,7 @@ use lofty::{
     tag::ItemKey,
 };
 use std::{
-    io::{BufReader, Read, Seek},
+    io::{BufRead, BufReader, Read, Seek},
     path::Path,
 };
 use symphonia::core::meta::StandardTagKey;
@@ -21,6 +21,11 @@ pub(super) struct TrackMetadata {
     pub(super) release_year: Option<u32>,
     pub(super) audio: AudioProperties,
     pub(super) artwork: Option<Vec<u8>>,
+}
+
+pub(super) enum ReaderMetadataError {
+    Empty,
+    Failed(String),
 }
 
 impl TrackMetadata {
@@ -91,13 +96,25 @@ pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
 pub(super) fn read_metadata_from_reader<R: Read + Seek>(
     reader: R,
     path: &Path,
-) -> Option<TrackMetadata> {
-    let reader = BufReader::with_capacity(128 * 1024, reader);
+) -> Result<TrackMetadata, ReaderMetadataError> {
+    let mut reader = BufReader::with_capacity(128 * 1024, reader);
+    if reader
+        .fill_buf()
+        .map_err(|error| ReaderMetadataError::Failed(error.to_string()))?
+        .is_empty()
+    {
+        return Err(ReaderMetadataError::Empty);
+    }
     let probe = match FileType::from_path(path) {
         Some(file_type) => Probe::with_file_type(reader, file_type),
-        None => Probe::new(reader).guess_file_type().ok()?,
+        None => Probe::new(reader)
+            .guess_file_type()
+            .map_err(|error| ReaderMetadataError::Failed(error.to_string()))?,
     };
-    Some(metadata_from_tagged_file(probe.read().ok()?, true))
+    probe
+        .read()
+        .map(|file| metadata_from_tagged_file(file, true))
+        .map_err(|error| ReaderMetadataError::Failed(error.to_string()))
 }
 
 fn metadata_from_tagged_file(file: TaggedFile, include_artwork: bool) -> TrackMetadata {
