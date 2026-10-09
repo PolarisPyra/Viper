@@ -303,7 +303,7 @@ fn show_connections(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
     {
         section_title(ui, "Samba / SMB share");
         ui.label(
-            "Connect directly to a network share. Passwords are kept only until Viper closes.",
+            "Connect directly to a network share. Connection details are stored in the local SQLite database for future access.",
         );
         ui.add_space(10.0);
         ui.label("Share folder URL");
