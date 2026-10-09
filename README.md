@@ -27,15 +27,17 @@ The app opens to the Home view. To select or change the music folder, choose **L
 
 Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/viper/viper.sqlite3`. Existing settings databases are copied from the previous `~/.config/viper/` location on first launch.
 
-## Linux desktop integration
+## Build an AppImage
 
-Build and install the app, its icon, and a matching desktop entry in user-local directories:
+Build a distributable AppImage for x86_64 Linux:
 
 ```sh
-./packaging/install-linux.sh
+./packaging/build-appimage.sh
 ```
 
-The app can then be launched from the desktop environment's application menu.
+The output is written to `target/appimage/`. The first run downloads linuxdeploy into
+`~/.cache/viper/appimage-tools/`; subsequent runs reuse it. Build on the oldest Linux
+distribution you intend to support for the best compatibility with older systems.
 
 ## Samba / SMB libraries
 

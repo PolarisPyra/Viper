@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Viper
+Comment=Browse and play your music library
+Exec=viper
+Icon=viper
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=viper
