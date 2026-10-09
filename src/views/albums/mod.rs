@@ -13,10 +13,7 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     let page = crate::components::pagination::show(
         ctx,
         albums.len(),
-        match layout {
-            AlbumLayout::Grid => 25,
-            AlbumLayout::List => crate::components::pagination::ALBUMS_PER_PAGE,
-        },
+        crate::components::pagination::ALBUMS_PER_PAGE,
         (
             matches!(layout, AlbumLayout::Grid),
             app.search.as_str(),

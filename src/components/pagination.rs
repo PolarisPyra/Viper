@@ -1,7 +1,7 @@
 use eframe::egui;
 use std::hash::Hash;
 
-pub(crate) const ALBUMS_PER_PAGE: usize = 15;
+pub(crate) const ALBUMS_PER_PAGE: usize = 30;
 
 const CANVAS: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
 
