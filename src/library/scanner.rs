@@ -12,7 +12,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -35,6 +35,7 @@ pub(crate) fn scan_library_with_auth(
 ) -> Library {
     let cache = TrackMetadataCache::load();
     let mut refreshed_cache = TrackMetadataCache::default();
+    let missing_metadata_tracks = AtomicUsize::new(0);
     let mut audio_paths = Vec::new();
     let mut unreadable_directories = 0;
     #[cfg(target_os = "linux")]
@@ -95,10 +96,17 @@ pub(crate) fn scan_library_with_auth(
             return None;
         }
         let metadata = fs::metadata(path).ok();
-        let track = metadata
+        let mut track = metadata
             .as_ref()
             .and_then(|metadata| cache.get(path, metadata))
             .unwrap_or_else(|| scan_track(path.clone()));
+        if !track.metadata_missing && track_has_no_metadata(&track) {
+            track.metadata_missing = true;
+        }
+        fill_missing_display_metadata(&mut track);
+        if track.metadata_missing {
+            missing_metadata_tracks.fetch_add(1, Ordering::Relaxed);
+        }
         progress.completed.fetch_add(1, Ordering::Relaxed);
         Some((track, metadata))
     };
@@ -127,18 +135,9 @@ pub(crate) fn scan_library_with_auth(
             };
             let embedded_art = metadata.artwork.take();
             let mut track = track_from_metadata(path.clone(), metadata);
-            if track.title.trim().is_empty() {
-                track.title = path
-                    .file_stem()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-            }
-            if track.album.trim().is_empty() {
-                track.album = path
-                    .parent()
-                    .and_then(Path::file_name)
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+            fill_missing_display_metadata(&mut track);
+            if track.metadata_missing {
+                missing_metadata_tracks.fetch_add(1, Ordering::Relaxed);
             }
             if !track.album.trim().is_empty() {
                 if let Some(art) = embedded_art {
@@ -261,6 +260,7 @@ pub(crate) fn scan_library_with_auth(
         track_album,
         unreadable_directories,
         scan_error: None,
+        missing_metadata_tracks: missing_metadata_tracks.load(Ordering::Relaxed),
     }
 }
 
@@ -399,6 +399,7 @@ fn scan_track(path: PathBuf) -> Track {
 }
 
 fn track_from_metadata(path: PathBuf, metadata: super::tag_reader::TrackMetadata) -> Track {
+    let metadata_missing = !metadata.has_tags();
     Track {
         path,
         title: metadata.title.unwrap_or_default(),
@@ -410,5 +411,34 @@ fn track_from_metadata(path: PathBuf, metadata: super::tag_reader::TrackMetadata
         duration_ms: metadata.duration_ms,
         release_year: metadata.release_year,
         audio: metadata.audio,
+        metadata_missing,
+    }
+}
+
+fn track_has_no_metadata(track: &Track) -> bool {
+    track.title.trim().is_empty()
+        && track.artist.trim().is_empty()
+        && track.album_artist.trim().is_empty()
+        && track.album.trim().is_empty()
+        && track.disc_number.is_none()
+        && track.track_number.is_none()
+        && track.release_year.is_none()
+}
+
+fn fill_missing_display_metadata(track: &mut Track) {
+    if track.title.trim().is_empty() {
+        track.title = track
+            .path
+            .file_stem()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+    }
+    if track.album.trim().is_empty() {
+        track.album = track
+            .path
+            .parent()
+            .and_then(Path::file_name)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
     }
 }

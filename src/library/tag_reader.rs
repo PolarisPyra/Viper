@@ -23,6 +23,18 @@ pub(super) struct TrackMetadata {
     pub(super) artwork: Option<Vec<u8>>,
 }
 
+impl TrackMetadata {
+    pub(super) fn has_tags(&self) -> bool {
+        self.title.is_some()
+            || self.artist.is_some()
+            || self.album.is_some()
+            || self.album_artist.is_some()
+            || self.disc_number.is_some()
+            || self.track_number.is_some()
+            || self.release_year.is_some()
+    }
+}
+
 pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
     if let Ok(file) = lofty::read_from_path(path) {
         return metadata_from_tagged_file(file, false);

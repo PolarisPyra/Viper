@@ -18,6 +18,8 @@ pub struct Track {
     pub release_year: Option<u32>,
     #[serde(default)]
     pub audio: AudioProperties,
+    #[serde(default)]
+    pub metadata_missing: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -43,6 +45,7 @@ pub struct Library {
     pub track_album: Vec<usize>,
     pub unreadable_directories: usize,
     pub(crate) scan_error: Option<String>,
+    pub missing_metadata_tracks: usize,
 }
 
 pub struct DiscoveredTracks {

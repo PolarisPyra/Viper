@@ -92,5 +92,14 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
             if let Some(error) = &app.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
+            if app.library.missing_metadata_tracks > 0 {
+                ui.colored_label(
+                    egui::Color32::from_rgb(235, 194, 83),
+                    format!(
+                        "{} tracks have no metadata; using filenames and folders.",
+                        app.library.missing_metadata_tracks
+                    ),
+                );
+            }
         });
 }

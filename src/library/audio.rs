@@ -4,8 +4,23 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "oga", "opus", "wav", "m4a", "aac", "aiff", "wma", "ape", "wv", "dsf",
     "dff", "webm",
 ];
+const IGNORED_FILE_NAMES: &[&str] = &[".DS_Store", "Thumbs.db"];
+const IGNORED_FILE_PREFIXES: &[&str] = &["._"];
 
 pub(crate) fn is_audio_path(path: &Path) -> bool {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if IGNORED_FILE_NAMES
+        .iter()
+        .any(|ignored| file_name.eq_ignore_ascii_case(ignored))
+        || IGNORED_FILE_PREFIXES
+            .iter()
+            .any(|prefix| file_name.starts_with(prefix))
+    {
+        return false;
+    }
+
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
