@@ -39,6 +39,24 @@ The output is written to `target/appimage/`. The first run downloads linuxdeploy
 `~/.cache/viper/appimage-tools/`; subsequent runs reuse it. Build on the oldest Linux
 distribution you intend to support for the best compatibility with older systems.
 
+## Install on Arch Linux
+
+From a checkout of this repository, install Viper with:
+
+```sh
+./packaging/install-arch.sh
+```
+
+The script builds the release binary and installs Viper under `/usr/bin` with its
+application menu entry and icon. Cargo and the native build/runtime dependencies must
+already be installed. It uses `sudo` when needed; you can also run it as root.
+
+To remove the installed application files later, run:
+
+```sh
+./packaging/uninstall-arch.sh
+```
+
 ## Samba / SMB libraries
 
 On Linux, open **Preferences → Connections → Samba / SMB share** and enter a share URL such as
