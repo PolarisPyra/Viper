@@ -41,6 +41,13 @@ impl TrackMetadata {
 }
 
 pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
+    if is_asf_path(path) {
+        if let Ok(file) = std::fs::File::open(path) {
+            if let Ok(metadata) = read_asf_metadata(&mut std::io::BufReader::new(file)) {
+                return metadata;
+            }
+        }
+    }
     if let Ok(file) = lofty::read_from_path(path) {
         return metadata_from_tagged_file(file, false);
     }
@@ -105,6 +112,13 @@ pub(super) fn read_metadata_from_reader<R: Read + Seek>(
     {
         return Err(ReaderMetadataError::Empty);
     }
+    if is_asf_path(path) {
+        return read_asf_metadata(&mut reader)
+            .map_err(ReaderMetadataError::Failed);
+    }
+    reader
+        .seek(std::io::SeekFrom::Start(0))
+        .map_err(|error| ReaderMetadataError::Failed(error.to_string()))?;
     let probe = match FileType::from_path(path) {
         Some(file_type) => Probe::with_file_type(reader, file_type),
         None => Probe::new(reader)
@@ -115,6 +129,45 @@ pub(super) fn read_metadata_from_reader<R: Read + Seek>(
         .read()
         .map(|file| metadata_from_tagged_file(file, true))
         .map_err(|error| ReaderMetadataError::Failed(error.to_string()))
+}
+
+fn is_asf_path(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case("wma") || extension.eq_ignore_ascii_case("asf")
+    })
+}
+
+fn read_asf_metadata<R: Read + Seek>(reader: &mut R) -> Result<TrackMetadata, String> {
+    let file = <audex::asf::ASF as audex::FileType>::load_from_reader(reader)
+        .map_err(|error| error.to_string())?;
+    let text = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| file.tags.get(key).first().map(|value| value.to_string()))
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let number = |keys: &[&str]| {
+        text(keys).and_then(|value| value.split('/').next()?.trim().parse().ok())
+    };
+    let millis = (file.info.length * 1000.0).max(0.0) as u64;
+    Ok(TrackMetadata {
+        title: text(&["Title"]),
+        artist: text(&["Author"]),
+        album: text(&["WM/AlbumTitle", "Album"]),
+        album_artist: text(&["WM/AlbumArtist"]),
+        disc_number: number(&["WM/PartOfSet"]),
+        track_number: number(&["WM/TrackNumber"]),
+        duration_ms: (millis > 0).then_some(millis),
+        release_year: text(&["WM/Year"])
+            .and_then(|date| date.get(..4)?.parse().ok()),
+        audio: AudioProperties {
+            bitrate_kbps: (file.info.bitrate > 0).then_some(file.info.bitrate / 1000),
+            sample_rate_hz: (file.info.sample_rate > 0).then_some(file.info.sample_rate),
+            bit_depth: None,
+            channels: (file.info.channels > 0).then_some(file.info.channels as u8),
+        },
+        artwork: None,
+    })
 }
 
 fn metadata_from_tagged_file(file: TaggedFile, include_artwork: bool) -> TrackMetadata {

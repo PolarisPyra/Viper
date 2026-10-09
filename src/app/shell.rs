@@ -62,6 +62,7 @@ pub struct ViperApp {
     watcher_root: Option<PathBuf>,
     pending_removed_paths: HashSet<PathBuf>,
     pub(crate) scan_progress: Arc<ScanProgress>,
+    pub(crate) dismissed_notice_signature: Option<String>,
     last_window_size: Option<[f32; 2]>,
     #[cfg(target_os = "linux")]
     pub(crate) smb_url_draft: String,
@@ -135,6 +136,7 @@ impl ViperApp {
             watcher_root: None,
             pending_removed_paths: HashSet::new(),
             scan_progress: Arc::new(ScanProgress::default()),
+            dismissed_notice_signature: None,
             last_window_size: None,
             #[cfg(target_os = "linux")]
             smb_url_draft: saved_samba

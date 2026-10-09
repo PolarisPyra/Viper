@@ -28,6 +28,7 @@ impl ViperApp {
         self.playback.stop();
         self.last_observed_track = None;
         self.library = Library::default();
+        self.dismissed_notice_signature = None;
         self.artwork_cache.clear();
         self.album_filter_dirty = true;
         self.selected_album = None;
