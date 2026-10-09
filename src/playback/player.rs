@@ -12,9 +12,15 @@ pub struct Playback {
     position: Duration,
     paused: bool,
     pub volume: u8,
+    #[cfg(target_os = "linux")]
+    smb_auth: Option<crate::library::smb::SmbAuth>,
 }
 
 impl Playback {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn set_smb_auth(&mut self, auth: crate::library::smb::SmbAuth) {
+        self.smb_auth = Some(auth);
+    }
     pub fn set_volume(&mut self, volume: u8) {
         self.volume = volume;
         self.apply_volume();
@@ -225,10 +231,53 @@ impl Playback {
             self.output = Some(output);
         }
 
-        let file = File::open(path)
-            .map_err(|error| format!("Could not open audio file {}: {error}", path.display()))?;
-        let decoder = Decoder::try_from(file)
-            .map_err(|error| format!("Could not decode audio file {}: {error}", path.display()))?;
+        #[cfg(target_os = "linux")]
+        let staged_path = if crate::library::smb::is_smb_path(path) {
+            let auth = self.smb_auth.as_ref().ok_or_else(|| {
+                "Reconnect to the SMB share in Preferences to play this track".to_owned()
+            })?;
+            Some(
+                crate::library::smb::stage_file(path, auth)
+                    .map_err(|error| format!("Could not read SMB audio file: {error}"))?,
+            )
+        } else {
+            None
+        };
+        #[cfg(target_os = "linux")]
+        let local_path = staged_path.as_deref().unwrap_or(path);
+        #[cfg(not(target_os = "linux"))]
+        let local_path = path;
+        let cleanup_staged = || {
+            #[cfg(target_os = "linux")]
+            if let Some(staged_path) = staged_path.as_ref() {
+                let parent = staged_path.parent().map(std::path::Path::to_owned);
+                let _ = std::fs::remove_file(staged_path);
+                if let Some(parent) = parent {
+                    let _ = std::fs::remove_dir(parent);
+                }
+            }
+        };
+        let file = match File::open(local_path) {
+            Ok(file) => file,
+            Err(error) => {
+                cleanup_staged();
+                return Err(format!(
+                    "Could not open audio file {}: {error}",
+                    path.display()
+                ));
+            }
+        };
+        let decoder = match Decoder::try_from(file) {
+            Ok(decoder) => decoder,
+            Err(error) => {
+                cleanup_staged();
+                return Err(format!(
+                    "Could not decode audio file {}: {error}",
+                    path.display()
+                ));
+            }
+        };
+        cleanup_staged();
         let player = Player::connect_new(
             self.output
                 .as_ref()
@@ -266,6 +315,8 @@ impl Default for Playback {
             position: Duration::ZERO,
             paused: false,
             volume: 70,
+            #[cfg(target_os = "linux")]
+            smb_auth: None,
         }
     }
 }

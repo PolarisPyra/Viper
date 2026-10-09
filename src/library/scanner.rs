@@ -21,23 +21,83 @@ use std::{
 use super::tag_reader::read_metadata;
 
 pub fn scan_library(root: &Path, cancel: &AtomicBool, progress: &ScanProgress) -> Library {
+    #[cfg(target_os = "linux")]
+    return scan_library_with_auth(root, cancel, progress, None);
+    #[cfg(not(target_os = "linux"))]
+    scan_library_with_auth(root, cancel, progress)
+}
+
+pub(crate) fn scan_library_with_auth(
+    root: &Path,
+    cancel: &AtomicBool,
+    progress: &ScanProgress,
+    #[cfg(target_os = "linux")] smb_auth: Option<super::smb::SmbAuth>,
+) -> Library {
     let cache = TrackMetadataCache::load();
     let mut refreshed_cache = TrackMetadataCache::default();
     let mut audio_paths = Vec::new();
     let mut unreadable_directories = 0;
-    scan_dir(
-        root,
-        root,
-        &mut audio_paths,
-        &mut unreadable_directories,
-        &mut HashSet::new(),
-        cancel,
-    );
+    #[cfg(target_os = "linux")]
+    let is_smb = super::smb::is_smb_path(root);
+    #[cfg(not(target_os = "linux"))]
+    let is_smb = false;
+    if is_smb {
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(auth) = smb_auth.as_ref() {
+                match super::smb::scan(&root.to_string_lossy(), auth) {
+                    Ok(paths) => audio_paths = paths,
+                    Err(error) => {
+                        eprintln!("Could not scan SMB music share: {error}");
+                        unreadable_directories = 1;
+                    }
+                }
+            } else {
+                unreadable_directories = 1;
+            }
+        }
+    } else {
+        scan_dir(
+            root,
+            root,
+            &mut audio_paths,
+            &mut unreadable_directories,
+            &mut HashSet::new(),
+            cancel,
+        );
+    }
     progress.phase.store(1, Ordering::Relaxed);
     progress.total.store(audio_paths.len(), Ordering::Relaxed);
     let scan_path = |path: &PathBuf| {
         if cancel.load(Ordering::Relaxed) {
             return None;
+        }
+        #[cfg(target_os = "linux")]
+        if is_smb {
+            let auth = smb_auth.as_ref()?;
+            let local_path = super::smb::stage_file(path, auth).ok()?;
+            let mut track = scan_track(local_path.clone());
+            let local_parent = local_path.parent().map(Path::to_owned);
+            let _ = fs::remove_file(local_path);
+            if let Some(parent) = local_parent {
+                let _ = fs::remove_dir(parent);
+            }
+            if track.title.trim().is_empty() {
+                track.title = path
+                    .file_stem()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+            }
+            if track.album.trim().is_empty() {
+                track.album = path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+            }
+            track.path = path.clone();
+            progress.completed.fetch_add(1, Ordering::Relaxed);
+            return Some((track, None));
         }
         let metadata = fs::metadata(path).ok();
         let track = metadata
@@ -48,6 +108,19 @@ pub fn scan_library(root: &Path, cancel: &AtomicBool, progress: &ScanProgress) -
         Some((track, metadata))
     };
     let worker_count = std::thread::available_parallelism().map_or(4, |count| count.get().min(8));
+    #[cfg(target_os = "linux")]
+    let scanned: Vec<_> = if is_smb {
+        audio_paths.iter().map(scan_path).collect()
+    } else {
+        match rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .build()
+        {
+            Ok(pool) => pool.install(|| audio_paths.par_iter().map(scan_path).collect()),
+            Err(_) => audio_paths.iter().map(scan_path).collect(),
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
     let scanned: Vec<_> = match rayon::ThreadPoolBuilder::new()
         .num_threads(worker_count)
         .build()
@@ -113,6 +186,25 @@ pub fn scan_library(root: &Path, cancel: &AtomicBool, progress: &ScanProgress) -
         });
         let title = tracks[album_tracks[0]].album.trim().to_owned();
         let artist = tracks[album_tracks[0]].album_artist.trim().to_owned();
+        #[cfg(target_os = "linux")]
+        let art = if is_smb {
+            smb_auth.as_ref().and_then(|auth| {
+                let staged = super::smb::stage_file(&tracks[album_tracks[0]].path, auth).ok()?;
+                let art = cover_for_track(&Track {
+                    path: staged.clone(),
+                    ..tracks[album_tracks[0]].clone()
+                });
+                let parent = staged.parent().map(Path::to_owned);
+                let _ = fs::remove_file(staged);
+                if let Some(parent) = parent {
+                    let _ = fs::remove_dir(parent);
+                }
+                art.map(Arc::from)
+            })
+        } else {
+            cover_for_track(&tracks[album_tracks[0]]).map(Arc::from)
+        };
+        #[cfg(not(target_os = "linux"))]
         let art = cover_for_track(&tracks[album_tracks[0]]).map(Arc::from);
         let album_index = albums.len();
         for track_index in &album_tracks {

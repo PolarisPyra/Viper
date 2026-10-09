@@ -42,9 +42,11 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                             .color(TEXT),
                     );
                     ui.label(
-                        egui::RichText::new("Manage your library and startup experience")
-                            .size(12.0)
-                            .color(MUTED),
+                        egui::RichText::new(
+                            "Manage your library, connections, and startup experience",
+                        )
+                        .size(12.0)
+                        .color(MUTED),
                     );
                 });
 
@@ -297,14 +299,55 @@ fn show_general(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
 fn show_connections(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
     ui.set_min_width(420.0);
     ui.add_space(8.0);
+    #[cfg(target_os = "linux")]
+    {
+        section_title(ui, "Samba / SMB share");
+        ui.label(
+            "Connect directly to a network share. Passwords are kept only until Viper closes.",
+        );
+        ui.add_space(10.0);
+        ui.label("Share folder URL");
+        connection_text_edit(
+            ui,
+            &mut app.smb_url_draft,
+            "smb://server/Music/Albums",
+            false,
+        );
+        ui.add_space(8.0);
+        ui.columns(2, |columns| {
+            columns[0].vertical(|ui| {
+                ui.label("Username");
+                connection_text_edit(ui, &mut app.smb_username, "Optional", false);
+            });
+            columns[1].vertical(|ui| {
+                ui.label("Workgroup");
+                connection_text_edit(ui, &mut app.smb_workgroup, "Optional", false);
+            });
+        });
+        ui.add_space(8.0);
+        ui.label("Password");
+        connection_text_edit(ui, &mut app.smb_password, "Optional", true);
+        ui.add_space(8.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), 38.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                if left_action_button(ui, "Connect and scan").clicked() {
+                    app.connect_smb_share();
+                }
+            },
+        );
+        ui.add_space(28.0);
+    }
     section_title(ui, "Discord Rich Presence");
     ui.label("Show the song currently playing in your Discord profile.");
     ui.add_space(10.0);
     ui.label("Discord Application ID");
-    ui.add(
-        egui::TextEdit::singleline(&mut app.discord_application_id_draft)
-            .hint_text("Enter your Discord application ID")
-            .desired_width(ui.available_width()),
+    connection_text_edit(
+        ui,
+        &mut app.discord_application_id_draft,
+        "Enter your Discord application ID",
+        false,
     );
     ui.add_space(6.0);
     ui.label(
@@ -313,13 +356,82 @@ fn show_connections(ui: &mut egui::Ui, app: &mut crate::app::ViperApp) {
             .color(MUTED),
     );
     ui.add_space(12.0);
-    if ui.button("Save Discord settings").clicked() {
-        app.settings.discord_application_id = match app.discord_application_id_draft.trim() {
-            "" => None,
-            id => Some(id.to_owned()),
-        };
-        app.save_settings();
-    }
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 38.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            if left_action_button(ui, "Save").clicked() {
+                app.settings.discord_application_id = match app.discord_application_id_draft.trim()
+                {
+                    "" => None,
+                    id => Some(id.to_owned()),
+                };
+                app.save_settings();
+            }
+        },
+    );
+}
+
+fn left_action_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let font = egui::FontId::proportional(12.0);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font.clone(), TEXT);
+    let size = egui::vec2(galley.size().x + 24.0, 34.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let fill = if response.is_pointer_button_down_on() {
+        ROW_SELECTED
+    } else if response.hovered() {
+        ROW_HOVERED
+    } else {
+        BUTTON
+    };
+    ui.painter().rect(
+        rect,
+        7.0,
+        fill,
+        egui::Stroke::new(1.0_f32, BORDER),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        egui::pos2(rect.left() + 12.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font,
+        TEXT,
+    );
+    response
+}
+
+fn connection_text_edit(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    hint: &str,
+    password: bool,
+) -> egui::Response {
+    ui.scope(|ui| {
+        let input_fill = egui::Color32::from_rgb(17, 20, 28);
+        let input_border = egui::Color32::from_rgb(51, 57, 72);
+        let visuals = &mut ui.visuals_mut().widgets;
+        visuals.inactive.bg_fill = input_fill;
+        visuals.inactive.bg_stroke = egui::Stroke::new(1.0_f32, input_border);
+        visuals.hovered.bg_fill = egui::Color32::from_rgb(21, 24, 33);
+        visuals.hovered.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
+        visuals.active.bg_fill = input_fill;
+        visuals.active.bg_stroke =
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(112, 119, 145));
+        let mut edit = egui::TextEdit::singleline(value)
+            .hint_text(egui::RichText::new(hint).color(MUTED))
+            .text_color(TEXT)
+            .background_color(input_fill)
+            .margin(egui::vec2(8.0, 6.0))
+            .desired_width(ui.available_width());
+        if password {
+            edit = edit.password(true);
+        }
+        ui.add(edit)
+    })
+    .inner
 }
 
 fn section_title(ui: &mut egui::Ui, title: &str) {

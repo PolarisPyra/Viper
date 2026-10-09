@@ -37,6 +37,15 @@ Build and install the app, its icon, and a matching desktop entry in user-local 
 
 The app can then be launched from the desktop environment's application menu.
 
+## Samba / SMB libraries
+
+On Linux, open **Preferences → Connections → Samba / SMB share** and enter a share URL such as
+`smb://nas.local/Music/Albums`. Username, password, and workgroup are optional for guest
+shares; entered connection settings are saved in Viper's local SQLite database. Viper uses Pavão and the
+system `libsmbclient` library. Install `libsmbclient-dev` to build and `libsmbclient` to run
+the application (for Debian or Ubuntu, `sudo apt install libsmbclient-dev libsmbclient`).
+SMB1-only servers require insecure legacy protocol support and are not enabled by default.
+
 ## Project layout
 
 - `src/main.rs` starts the application; `src/app/initialization.rs` configures fonts and the native window, then creates `ViperApp`.

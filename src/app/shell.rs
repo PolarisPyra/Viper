@@ -63,6 +63,16 @@ pub struct ViperApp {
     pending_removed_paths: HashSet<PathBuf>,
     pub(crate) scan_progress: Arc<ScanProgress>,
     last_window_size: Option<[f32; 2]>,
+    #[cfg(target_os = "linux")]
+    pub(crate) smb_url_draft: String,
+    #[cfg(target_os = "linux")]
+    pub(crate) smb_username: String,
+    #[cfg(target_os = "linux")]
+    pub(crate) smb_password: String,
+    #[cfg(target_os = "linux")]
+    pub(crate) smb_workgroup: String,
+    #[cfg(target_os = "linux")]
+    smb_auth: Option<crate::library::smb::SmbAuth>,
 }
 
 impl ViperApp {
@@ -79,6 +89,10 @@ impl ViperApp {
             ),
         };
         let saved_path = settings.music_path.clone();
+        #[cfg(target_os = "linux")]
+        let saved_samba = crate::storage::settings::load_samba_settings()
+            .ok()
+            .flatten();
         let discord_application_id_draft =
             settings.discord_application_id.clone().unwrap_or_default();
         let startup_page = match settings.startup_view {
@@ -122,8 +136,54 @@ impl ViperApp {
             pending_removed_paths: HashSet::new(),
             scan_progress: Arc::new(ScanProgress::default()),
             last_window_size: None,
+            #[cfg(target_os = "linux")]
+            smb_url_draft: saved_samba
+                .as_ref()
+                .map(|samba| samba.share_url.clone())
+                .or_else(|| {
+                    saved_path
+                        .as_ref()
+                        .filter(|path| crate::library::smb::is_smb_path(path))
+                        .map(|path| path.to_string_lossy().into_owned())
+                })
+                .unwrap_or_default(),
+            #[cfg(target_os = "linux")]
+            smb_username: saved_samba
+                .as_ref()
+                .map(|samba| samba.username.clone())
+                .unwrap_or_default(),
+            #[cfg(target_os = "linux")]
+            smb_password: saved_samba
+                .as_ref()
+                .map(|samba| samba.password.clone())
+                .unwrap_or_default(),
+            #[cfg(target_os = "linux")]
+            smb_workgroup: saved_samba
+                .as_ref()
+                .map(|samba| samba.workgroup.clone())
+                .unwrap_or_default(),
+            #[cfg(target_os = "linux")]
+            smb_auth: saved_samba
+                .as_ref()
+                .map(|samba| crate::library::smb::SmbAuth {
+                    username: samba.username.clone(),
+                    password: samba.password.clone(),
+                    workgroup: samba.workgroup.clone(),
+                }),
         };
         if let Some(path) = saved_path {
+            #[cfg(target_os = "linux")]
+            if crate::library::smb::is_smb_path(&path) {
+                if let Some(auth) = app.smb_auth.clone() {
+                    app.playback.set_smb_auth(auth);
+                    app.start_scan(path);
+                } else {
+                    app.error = Some("Reconnect to your SMB share in Preferences".into());
+                }
+            } else {
+                app.start_scan(path);
+            }
+            #[cfg(not(target_os = "linux"))]
             app.start_scan(path);
         }
         app
@@ -147,6 +207,39 @@ impl ViperApp {
                 self.error = Some(error);
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn connect_smb_share(&mut self) {
+        let url = self.smb_url_draft.trim();
+        let auth = crate::library::smb::SmbAuth {
+            username: self.smb_username.trim().to_owned(),
+            password: self.smb_password.clone(),
+            workgroup: self.smb_workgroup.trim().to_owned(),
+        };
+        if let Err(error) = crate::library::smb::validate_url(url) {
+            self.error = Some(error);
+            return;
+        }
+        let samba_settings = crate::storage::settings::SambaSettings {
+            share_url: url.to_owned(),
+            username: auth.username.clone(),
+            password: auth.password.clone(),
+            workgroup: auth.workgroup.clone(),
+        };
+        if let Err(error) = crate::storage::settings::save_samba_settings(&samba_settings) {
+            self.error = Some(format!("Could not save SMB settings: {error}"));
+            return;
+        }
+        let path = PathBuf::from(url);
+        self.settings.music_path = Some(path.clone());
+        if let Err(error) = self.settings.save() {
+            self.error = Some(format!("Could not save SMB location: {error}"));
+            return;
+        }
+        self.playback.set_smb_auth(auth.clone());
+        self.smb_auth = Some(auth);
+        self.start_scan(path);
     }
 
     pub(crate) fn filtered_album_indices(&mut self) -> Arc<Vec<usize>> {

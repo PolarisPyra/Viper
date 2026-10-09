@@ -1,5 +1,7 @@
 use super::ViperApp;
-use crate::library::{scan_library, Library, ScanProgress};
+#[cfg(not(target_os = "linux"))]
+use crate::library::scan_library;
+use crate::library::{Library, ScanProgress};
 use std::{
     path::PathBuf,
     sync::{
@@ -37,6 +39,8 @@ impl ViperApp {
         let worker_cancel = Arc::clone(&cancel);
         let progress = Arc::new(ScanProgress::default());
         let worker_progress = Arc::clone(&progress);
+        #[cfg(target_os = "linux")]
+        let smb_auth = self.smb_auth.clone();
         self.scan_progress = progress;
         self.scan_receiver = Some(receiver);
         self.scan_cancel = Some(cancel);
@@ -44,6 +48,14 @@ impl ViperApp {
         if let Err(error) = std::thread::Builder::new()
             .name("music-library-scan".into())
             .spawn(move || {
+                #[cfg(target_os = "linux")]
+                let library = crate::library::scan_library_with_auth(
+                    &root,
+                    &worker_cancel,
+                    &worker_progress,
+                    smb_auth,
+                );
+                #[cfg(not(target_os = "linux"))]
                 let library = scan_library(&root, &worker_cancel, &worker_progress);
                 let _ = sender.send(library);
             })

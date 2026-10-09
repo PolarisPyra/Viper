@@ -77,6 +77,58 @@ pub enum AlbumLayout {
     List,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct SambaSettings {
+    pub share_url: String,
+    pub username: String,
+    pub password: String,
+    pub workgroup: String,
+}
+
+pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
+    use rusqlite::OptionalExtension;
+
+    let connection = super::database::open()?;
+    connection
+        .query_row(
+            "SELECT share_url, username, password, workgroup
+             FROM samba_settings WHERE id = 1",
+            [],
+            |row| {
+                Ok(SambaSettings {
+                    share_url: row.get(0)?,
+                    username: row.get(1)?,
+                    password: row.get(2)?,
+                    workgroup: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(super::database::database_error)
+}
+
+pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
+    let connection = super::database::open()?;
+    connection
+        .execute(
+            "INSERT INTO samba_settings (id, share_url, username, password, workgroup)
+             VALUES (1, ?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+                share_url=excluded.share_url,
+                username=excluded.username,
+                password=excluded.password,
+                workgroup=excluded.workgroup",
+            rusqlite::params![
+                settings.share_url,
+                settings.username,
+                settings.password,
+                settings.workgroup,
+            ],
+        )
+        .map_err(super::database::database_error)?;
+    Ok(())
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Settings {

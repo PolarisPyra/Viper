@@ -22,6 +22,7 @@ discord-rich-presence = "1.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+pavao = "0.3.1"
 
 [profile.release]
 lto = "thin"

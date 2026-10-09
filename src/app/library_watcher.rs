@@ -15,7 +15,12 @@ use std::{
 
 impl ViperApp {
     pub(super) fn poll_file_watcher(&mut self, ctx: &egui::Context) {
-        if let Some(root) = self.settings.music_path.as_ref() {
+        if let Some(root) = self
+            .settings
+            .music_path
+            .as_ref()
+            .filter(|root| !root.to_string_lossy().starts_with("smb://"))
+        {
             if self.watcher_root.as_ref() != Some(root) {
                 self.file_watcher = None;
                 match FileWatcher::new(root, ctx.clone()) {
@@ -29,6 +34,9 @@ impl ViperApp {
                     }
                 }
             }
+        } else {
+            self.file_watcher = None;
+            self.watcher_root = None;
         }
         if let Some(watcher) = &self.file_watcher {
             match watcher.poll() {
