@@ -27,4 +27,8 @@ cargo build --release --locked --manifest-path "$repo_root/Cargo.toml"
 "${as_root[@]}" install -Dm644 "$repo_root/packaging/viper.desktop" /usr/share/applications/viper.desktop
 "${as_root[@]}" install -Dm644 "$repo_root/assets/viper.png" /usr/share/icons/hicolor/512x512/apps/viper.png
 
+if command -v update-desktop-database >/dev/null 2>&1; then
+    "${as_root[@]}" update-desktop-database /usr/share/applications
+fi
+
 printf 'Viper installed. Launch it with `viper` or from your application menu.\n'

@@ -6,4 +6,5 @@ Exec=viper
 Icon=viper
 Terminal=false
 Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/opus;audio/wav;audio/x-wav;audio/aac;audio/mp4;audio/x-m4a;audio/mpegurl;audio/vnd.rn-realaudio;audio/x-mpegurl;audio/x-ms-wma;audio/x-musepack;audio/x-pn-realaudio;audio/x-scpls;audio/x-speex;
 StartupWMClass=viper
