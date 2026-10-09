@@ -1,9 +1,7 @@
 pub mod app;
-pub mod artwork;
-pub mod components;
-pub mod library;
-pub mod playback;
-pub mod storage;
-pub mod views;
+pub mod features;
+pub(crate) mod platform;
+pub(crate) mod shared;
+pub(crate) mod workbench;
 
 pub use app::run;

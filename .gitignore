@@ -6,9 +6,8 @@ target/
 **/mutants.out*/
 rustc-ice-*.txt
 
-# Optional additions for IDEs and OS files (.idea/, .vscode/, .DS_Store, Thumbs.db)
+# Optional additions for IDEs and OS files (.idea/, .DS_Store, Thumbs.db)
 .idea/
-.vscode/
 .DS_Store
 Thumbs.db
 
@@ -17,3 +16,6 @@ Thumbs.db
 .clinerules 
 .agents
 skills-lock.json
+
+# Local Codex instructions
+AGENTS.md

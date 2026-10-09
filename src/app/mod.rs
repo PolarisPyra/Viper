@@ -1,7 +1,5 @@
-mod discord_presence;
-mod initialization;
-mod shell;
+mod application;
+mod bootstrap;
 
-pub use initialization::run;
-pub(crate) use shell::Page;
-pub use shell::ViperApp;
+pub use application::ViperApp;
+pub use bootstrap::run;
