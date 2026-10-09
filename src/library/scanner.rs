@@ -38,6 +38,7 @@ pub(crate) fn scan_library_with_auth(
     let missing_metadata_tracks = AtomicUsize::new(0);
     let mut audio_paths = Vec::new();
     let mut skipped_empty_files = Vec::new();
+    let mut scan_errors = Vec::new();
     let mut unreadable_directories = 0;
     #[cfg(target_os = "linux")]
     let is_smb = super::smb::is_smb_path(root);
@@ -139,14 +140,11 @@ pub(crate) fn scan_library_with_auth(
                     continue;
                 }
                 Err(super::tag_reader::ReaderMetadataError::Failed(error)) => {
-                    return Library {
-                        scan_error: Some(format!(
-                            "Could not read tags from SMB track {}: {error}. The scan was stopped.",
-                            path.file_name().unwrap_or_default().to_string_lossy()
-                        )),
-                        skipped_empty_files,
-                        ..Library::default()
-                    };
+                    scan_errors.push(format!(
+                        "Could not read tags from SMB track {}: {error}",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                    super::tag_reader::empty_metadata()
                 }
             };
             let embedded_art = metadata.artwork.take();
@@ -278,6 +276,7 @@ pub(crate) fn scan_library_with_auth(
         scan_error: None,
         missing_metadata_tracks: missing_metadata_tracks.load(Ordering::Relaxed),
         skipped_empty_files,
+        scan_errors,
     }
 }
 

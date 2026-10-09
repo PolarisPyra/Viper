@@ -223,7 +223,7 @@ fn metadata_from_tagged_file(file: TaggedFile, include_artwork: bool) -> TrackMe
     }
 }
 
-fn empty_metadata() -> TrackMetadata {
+pub(super) fn empty_metadata() -> TrackMetadata {
     TrackMetadata {
         title: None,
         artist: None,

@@ -17,7 +17,7 @@ pub(crate) fn show(
     page = page.min(page_count.saturating_sub(1));
 
     if page_count > 1 {
-        egui::TopBottomPanel::bottom("album-list-pagination")
+        egui::TopBottomPanel::bottom("album-pagination")
             .exact_height(48.0)
             .frame(
                 egui::Frame::new()

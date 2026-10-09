@@ -10,20 +10,20 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
     crate::components::view_toolbar::show(ctx, app);
     let layout = app.settings.album_layout;
     let albums = app.filtered_album_indices();
-    let page = if layout == AlbumLayout::List {
-        crate::components::pagination::show(
-            ctx,
-            albums.len(),
-            crate::components::pagination::ALBUMS_PER_PAGE,
-            (
-                app.search.as_str(),
-                app.settings.album_sort.label(),
-                app.settings.sort_ascending,
-            ),
-        )
-    } else {
-        0..albums.len()
-    };
+    let page = crate::components::pagination::show(
+        ctx,
+        albums.len(),
+        match layout {
+            AlbumLayout::Grid => 25,
+            AlbumLayout::List => crate::components::pagination::ALBUMS_PER_PAGE,
+        },
+        (
+            matches!(layout, AlbumLayout::Grid),
+            app.search.as_str(),
+            app.settings.album_sort.label(),
+            app.settings.sort_ascending,
+        ),
+    );
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(CANVAS).inner_margin(0))
         .show(ctx, |ui| show_grid(ctx, ui, app, &albums, page));
@@ -50,7 +50,7 @@ fn show_grid(
     let bounds = ui.max_rect();
     egui::ScrollArea::vertical()
         .id_salt(match layout {
-            AlbumLayout::Grid => ("album-grid-scroll", 0),
+            AlbumLayout::Grid => ("album-grid-scroll", page.start),
             AlbumLayout::List => ("album-list-scroll", page.start),
         })
         .auto_shrink([false, false])
@@ -63,7 +63,14 @@ fn show_grid(
                 return;
             }
             match layout {
-                AlbumLayout::Grid => grid::show_album_rows(ctx, ui, app, albums, viewport, width),
+                AlbumLayout::Grid => grid::show_album_rows(
+                    ctx,
+                    ui,
+                    app,
+                    &albums[page.clone()],
+                    viewport,
+                    width,
+                ),
                 AlbumLayout::List => {
                     list::show_album_list(ctx, ui, app, &albums[page.clone()], viewport, width)
                 }

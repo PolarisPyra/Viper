@@ -47,6 +47,7 @@ pub struct Library {
     pub(crate) scan_error: Option<String>,
     pub missing_metadata_tracks: usize,
     pub skipped_empty_files: Vec<PathBuf>,
+    pub scan_errors: Vec<String>,
 }
 
 pub struct DiscoveredTracks {

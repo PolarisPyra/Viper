@@ -91,13 +91,15 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
             });
             let has_notices = app.error.is_some()
                 || app.library.missing_metadata_tracks > 0
-                || !app.library.skipped_empty_files.is_empty();
+                || !app.library.skipped_empty_files.is_empty()
+                || !app.library.scan_errors.is_empty();
             if has_notices {
                 let notice_signature = format!(
-                    "{:?}|{}|{:?}",
+                    "{:?}|{}|{:?}|{:?}",
                     app.error,
                     app.library.missing_metadata_tracks,
-                    app.library.skipped_empty_files
+                    app.library.skipped_empty_files,
+                    app.library.scan_errors
                 );
                 if app.dismissed_notice_signature.as_deref()
                     != Some(notice_signature.as_str())
@@ -137,6 +139,24 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                         .show(ui, |ui| {
                                             for path in &app.library.skipped_empty_files {
                                                 ui.label(path.display().to_string());
+                                            }
+                                        });
+                                    }
+                                    if !app.library.scan_errors.is_empty() {
+                                        egui::CollapsingHeader::new(
+                                            egui::RichText::new(format!(
+                                                "Could not read tags for {} tracks",
+                                                app.library.scan_errors.len()
+                                            ))
+                                            .color(egui::Color32::LIGHT_RED),
+                                        )
+                                        .id_salt("scan-track-errors")
+                                        .show(ui, |ui| {
+                                            for error in &app.library.scan_errors {
+                                                ui.colored_label(
+                                                    egui::Color32::LIGHT_RED,
+                                                    error,
+                                                );
                                             }
                                         });
                                     }
