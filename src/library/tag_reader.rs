@@ -1,9 +1,13 @@
 use super::model::AudioProperties;
 use lofty::{
-    file::{AudioFile, TaggedFileExt},
+    file::{AudioFile, FileType, TaggedFile, TaggedFileExt},
+    probe::Probe,
     tag::ItemKey,
 };
-use std::path::Path;
+use std::{
+    io::{BufReader, Read, Seek},
+    path::Path,
+};
 use symphonia::core::meta::StandardTagKey;
 
 pub(super) struct TrackMetadata {
@@ -16,53 +20,12 @@ pub(super) struct TrackMetadata {
     pub(super) duration_ms: Option<u64>,
     pub(super) release_year: Option<u32>,
     pub(super) audio: AudioProperties,
+    pub(super) artwork: Option<Vec<u8>>,
 }
 
 pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
     if let Ok(file) = lofty::read_from_path(path) {
-        let properties = file.properties();
-        let duration_ms = {
-            let millis = properties.duration().as_millis() as u64;
-            (millis > 0).then_some(millis)
-        };
-        let audio = AudioProperties {
-            bitrate_kbps: properties.audio_bitrate(),
-            sample_rate_hz: properties.sample_rate(),
-            bit_depth: properties.bit_depth(),
-            channels: properties.channels(),
-        };
-        if let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) {
-            let text = |key| {
-                tag.get_string(key)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned)
-            };
-            let number = |key| text(key).and_then(|value| value.split('/').next()?.parse().ok());
-            return TrackMetadata {
-                title: text(ItemKey::TrackTitle),
-                artist: text(ItemKey::TrackArtist),
-                album: text(ItemKey::AlbumTitle),
-                album_artist: text(ItemKey::AlbumArtist),
-                disc_number: number(ItemKey::DiscNumber),
-                track_number: number(ItemKey::TrackNumber),
-                duration_ms,
-                release_year: text(ItemKey::RecordingDate)
-                    .and_then(|date| date.get(..4)?.parse::<u32>().ok()),
-                audio,
-            };
-        }
-        return TrackMetadata {
-            title: None,
-            artist: None,
-            album: None,
-            album_artist: None,
-            disc_number: None,
-            track_number: None,
-            duration_ms,
-            release_year: None,
-            audio,
-        };
+        return metadata_from_tagged_file(file, false);
     }
 
     let Some(media) = super::symphonia::probe(path) else {
@@ -109,6 +72,72 @@ pub(super) fn read_metadata(path: &Path) -> TrackMetadata {
         )
         .and_then(|date| date.get(..4)?.parse().ok()),
         audio: media.audio,
+        artwork: None,
+    }
+}
+
+pub(super) fn read_metadata_from_reader<R: Read + Seek>(
+    reader: R,
+    path: &Path,
+) -> Option<TrackMetadata> {
+    let reader = BufReader::with_capacity(128 * 1024, reader);
+    let probe = match FileType::from_path(path) {
+        Some(file_type) => Probe::with_file_type(reader, file_type),
+        None => Probe::new(reader).guess_file_type().ok()?,
+    };
+    Some(metadata_from_tagged_file(probe.read().ok()?, true))
+}
+
+fn metadata_from_tagged_file(file: TaggedFile, include_artwork: bool) -> TrackMetadata {
+    let properties = file.properties();
+    let millis = properties.duration().as_millis() as u64;
+    let duration_ms = (millis > 0).then_some(millis);
+    let audio = AudioProperties {
+        bitrate_kbps: properties.audio_bitrate(),
+        sample_rate_hz: properties.sample_rate(),
+        bit_depth: properties.bit_depth(),
+        channels: properties.channels(),
+    };
+    let tag = file.primary_tag().or_else(|| file.first_tag());
+    let artwork = include_artwork
+        .then(|| {
+            tag.and_then(|tag| tag.pictures().first())
+                .map(|picture| picture.data().to_vec())
+        })
+        .flatten();
+    let Some(tag) = tag else {
+        return TrackMetadata {
+            title: None,
+            artist: None,
+            album: None,
+            album_artist: None,
+            disc_number: None,
+            track_number: None,
+            duration_ms,
+            release_year: None,
+            audio,
+            artwork,
+        };
+    };
+    let text = |key| {
+        tag.get_string(key)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let number = |key| text(key).and_then(|value| value.split('/').next()?.parse().ok());
+    TrackMetadata {
+        title: text(ItemKey::TrackTitle),
+        artist: text(ItemKey::TrackArtist),
+        album: text(ItemKey::AlbumTitle),
+        album_artist: text(ItemKey::AlbumArtist),
+        disc_number: number(ItemKey::DiscNumber),
+        track_number: number(ItemKey::TrackNumber),
+        duration_ms,
+        release_year: text(ItemKey::RecordingDate)
+            .and_then(|date| date.get(..4)?.parse::<u32>().ok()),
+        audio,
+        artwork,
     }
 }
 
@@ -123,5 +152,6 @@ fn empty_metadata() -> TrackMetadata {
         duration_ms: None,
         release_year: None,
         audio: AudioProperties::default(),
+        artwork: None,
     }
 }

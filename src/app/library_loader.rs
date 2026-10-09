@@ -73,7 +73,9 @@ impl ViperApp {
         };
         match receiver.try_recv() {
             Ok(library) => {
-                if library.unreadable_directories > 0 {
+                if let Some(error) = &library.scan_error {
+                    self.error = Some(error.clone());
+                } else if library.unreadable_directories > 0 {
                     self.error = Some(format!(
                         "Skipped {} unreadable director{} while scanning",
                         library.unreadable_directories,

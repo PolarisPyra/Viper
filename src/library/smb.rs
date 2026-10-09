@@ -57,6 +57,64 @@ impl SharePath {
     }
 }
 
+pub(crate) struct SmbSession {
+    client: SmbClient,
+}
+
+impl SmbSession {
+    pub(crate) fn new(root: &str, auth: &SmbAuth) -> Result<Self, String> {
+        let share = SharePath::parse(root)?;
+        Ok(Self {
+            client: share.client(auth)?,
+        })
+    }
+
+    pub(super) fn read_metadata(
+        &self,
+        path: &Path,
+    ) -> Result<super::tag_reader::TrackMetadata, String> {
+        let parsed = SharePath::parse(
+            path.to_str()
+                .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
+        )?;
+        let remote = self
+            .client
+            .open_with(&parsed.path, SmbOpenOptions::default().read(true))
+            .map_err(|error| error.to_string())?;
+        super::tag_reader::read_metadata_from_reader(remote, path)
+            .ok_or_else(|| "could not read audio metadata from the share".to_owned())
+    }
+
+    pub(crate) fn stage_file(&self, path: &Path) -> Result<PathBuf, String> {
+        let parsed = SharePath::parse(
+            path.to_str()
+                .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
+        )?;
+        let mut remote = self
+            .client
+            .open_with(&parsed.path, SmbOpenOptions::default().read(true))
+            .map_err(|error| error.to_string())?;
+        let name = Path::new(&parsed.path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("track.audio");
+        let temp_dir = std::env::temp_dir().join(format!(
+            "viper-smb-{}-{}",
+            std::process::id(),
+            TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&temp_dir).map_err(|error| error.to_string())?;
+        let temp = temp_dir.join(name);
+        let mut local = File::create(&temp).map_err(|error| error.to_string())?;
+        if let Err(error) = io::copy(&mut remote, &mut local) {
+            let _ = std::fs::remove_file(&temp);
+            let _ = std::fs::remove_dir(&temp_dir);
+            return Err(error.to_string());
+        }
+        Ok(temp)
+    }
+}
+
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
     SharePath::parse(url).map(|_| ())
 }
@@ -101,30 +159,10 @@ pub(crate) fn scan(root: &str, auth: &SmbAuth) -> Result<Vec<PathBuf>, String> {
 }
 
 pub(crate) fn stage_file(path: &Path, auth: &SmbAuth) -> Result<PathBuf, String> {
-    let parsed = SharePath::parse(
+    let session = SmbSession::new(
         path.to_str()
             .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
+        auth,
     )?;
-    let client = parsed.client(auth)?;
-    let mut remote = client
-        .open_with(&parsed.path, SmbOpenOptions::default().read(true))
-        .map_err(|error| error.to_string())?;
-    let name = Path::new(&parsed.path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("track.audio");
-    let temp_dir = std::env::temp_dir().join(format!(
-        "viper-smb-{}-{}",
-        std::process::id(),
-        TEMP_ID.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&temp_dir).map_err(|error| error.to_string())?;
-    let temp = temp_dir.join(name);
-    let mut local = File::create(&temp).map_err(|error| error.to_string())?;
-    if let Err(error) = io::copy(&mut remote, &mut local) {
-        let _ = std::fs::remove_file(&temp);
-        let _ = std::fs::remove_dir(&temp_dir);
-        return Err(error.to_string());
-    }
-    Ok(temp)
+    session.stage_file(path)
 }

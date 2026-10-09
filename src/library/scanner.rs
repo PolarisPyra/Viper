@@ -66,22 +66,67 @@ pub(crate) fn scan_library_with_auth(
             cancel,
         );
     }
+    #[cfg(target_os = "linux")]
+    let smb_session = if is_smb {
+        let Some(auth) = smb_auth.as_ref() else {
+            return Library {
+                scan_error: Some("Reconnect to the SMB share before scanning".into()),
+                ..Library::default()
+            };
+        };
+        match super::smb::SmbSession::new(&root.to_string_lossy(), auth) {
+            Ok(session) => Some(session),
+            Err(error) => {
+                return Library {
+                    scan_error: Some(format!("Could not open SMB share for scanning: {error}")),
+                    ..Library::default()
+                };
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(target_os = "linux")]
+    let mut smb_album_art: HashMap<(String, String), Arc<[u8]>> = HashMap::new();
     progress.phase.store(1, Ordering::Relaxed);
     progress.total.store(audio_paths.len(), Ordering::Relaxed);
     let scan_path = |path: &PathBuf| {
         if cancel.load(Ordering::Relaxed) {
             return None;
         }
-        #[cfg(target_os = "linux")]
-        if is_smb {
-            let auth = smb_auth.as_ref()?;
-            let local_path = super::smb::stage_file(path, auth).ok()?;
-            let mut track = scan_track(local_path.clone());
-            let local_parent = local_path.parent().map(Path::to_owned);
-            let _ = fs::remove_file(local_path);
-            if let Some(parent) = local_parent {
-                let _ = fs::remove_dir(parent);
+        let metadata = fs::metadata(path).ok();
+        let track = metadata
+            .as_ref()
+            .and_then(|metadata| cache.get(path, metadata))
+            .unwrap_or_else(|| scan_track(path.clone()));
+        progress.completed.fetch_add(1, Ordering::Relaxed);
+        Some((track, metadata))
+    };
+    let worker_count = std::thread::available_parallelism().map_or(4, |count| count.get().min(8));
+    #[cfg(target_os = "linux")]
+    let scanned: Vec<_> = if is_smb {
+        let session = smb_session
+            .as_ref()
+            .expect("SMB scan session was initialized");
+        let mut scanned = Vec::with_capacity(audio_paths.len());
+        for path in &audio_paths {
+            if cancel.load(Ordering::Relaxed) {
+                return Library::default();
             }
+            let mut metadata = match session.read_metadata(path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    return Library {
+                        scan_error: Some(format!(
+                            "Could not read tags from SMB track {}: {error}. The scan was stopped.",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        )),
+                        ..Library::default()
+                    };
+                }
+            };
+            let embedded_art = metadata.artwork.take();
+            let mut track = track_from_metadata(path.clone(), metadata);
             if track.title.trim().is_empty() {
                 track.title = path
                     .file_stem()
@@ -95,22 +140,20 @@ pub(crate) fn scan_library_with_auth(
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_default();
             }
-            track.path = path.clone();
+            if !track.album.trim().is_empty() {
+                if let Some(art) = embedded_art {
+                    smb_album_art
+                        .entry((
+                            normalize_album_key(&track.album),
+                            normalize_album_key(&track.album_artist),
+                        ))
+                        .or_insert_with(|| Arc::from(art));
+                }
+            }
             progress.completed.fetch_add(1, Ordering::Relaxed);
-            return Some((track, None));
+            scanned.push(Some((track, None)));
         }
-        let metadata = fs::metadata(path).ok();
-        let track = metadata
-            .as_ref()
-            .and_then(|metadata| cache.get(path, metadata))
-            .unwrap_or_else(|| scan_track(path.clone()));
-        progress.completed.fetch_add(1, Ordering::Relaxed);
-        Some((track, metadata))
-    };
-    let worker_count = std::thread::available_parallelism().map_or(4, |count| count.get().min(8));
-    #[cfg(target_os = "linux")]
-    let scanned: Vec<_> = if is_smb {
-        audio_paths.iter().map(scan_path).collect()
+        scanned
     } else {
         match rayon::ThreadPoolBuilder::new()
             .num_threads(worker_count)
@@ -188,19 +231,12 @@ pub(crate) fn scan_library_with_auth(
         let artist = tracks[album_tracks[0]].album_artist.trim().to_owned();
         #[cfg(target_os = "linux")]
         let art = if is_smb {
-            smb_auth.as_ref().and_then(|auth| {
-                let staged = super::smb::stage_file(&tracks[album_tracks[0]].path, auth).ok()?;
-                let art = cover_for_track(&Track {
-                    path: staged.clone(),
-                    ..tracks[album_tracks[0]].clone()
-                });
-                let parent = staged.parent().map(Path::to_owned);
-                let _ = fs::remove_file(staged);
-                if let Some(parent) = parent {
-                    let _ = fs::remove_dir(parent);
-                }
-                art.map(Arc::from)
-            })
+            smb_album_art
+                .get(&(
+                    normalize_album_key(&tracks[album_tracks[0]].album),
+                    normalize_album_key(&tracks[album_tracks[0]].album_artist),
+                ))
+                .cloned()
         } else {
             cover_for_track(&tracks[album_tracks[0]]).map(Arc::from)
         };
@@ -224,6 +260,7 @@ pub(crate) fn scan_library_with_auth(
         albums,
         track_album,
         unreadable_directories,
+        scan_error: None,
     }
 }
 
@@ -358,6 +395,10 @@ fn scan_dir(
 
 fn scan_track(path: PathBuf) -> Track {
     let metadata = read_metadata(&path);
+    track_from_metadata(path, metadata)
+}
+
+fn track_from_metadata(path: PathBuf, metadata: super::tag_reader::TrackMetadata) -> Track {
     Track {
         path,
         title: metadata.title.unwrap_or_default(),

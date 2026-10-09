@@ -42,6 +42,7 @@ pub struct Library {
     pub albums: Vec<Album>,
     pub track_album: Vec<usize>,
     pub unreadable_directories: usize,
+    pub(crate) scan_error: Option<String>,
 }
 
 pub struct DiscoveredTracks {
