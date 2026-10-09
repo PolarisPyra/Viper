@@ -38,6 +38,7 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut ViperApp) {
                     &popup_anchor,
                     egui::PopupCloseBehavior::CloseOnClickOutside,
                     |popup_ui| {
+                        style_sort_menu(popup_ui);
                         popup_ui.set_min_width(sort_rect.width());
                         popup_ui.spacing_mut().button_padding = egui::vec2(14.0, 5.0);
                         popup_ui.spacing_mut().item_spacing.y = 4.0;
@@ -177,7 +178,7 @@ fn paint_icon_button(
     );
 }
 
-fn style_sort_menu(ui: &mut egui::Ui) {
+pub(crate) fn style_sort_menu(ui: &mut egui::Ui) {
     let fill = egui::Color32::from_rgb(27, 31, 41);
     let hover = egui::Color32::from_rgb(35, 39, 50);
     let selected = egui::Color32::from_rgb(48, 52, 68);

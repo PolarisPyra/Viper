@@ -450,7 +450,7 @@ impl eframe::App for ViperApp {
             self.playback.position(),
         );
 
-        crate::components::file_menu::show(ctx, self);
+        crate::components::menu_bar::show(ctx, self);
         crate::components::view_header::show(ctx, self);
         crate::components::bottom_panel::show(ctx, self);
         crate::components::sidepanel::show(ctx, self);

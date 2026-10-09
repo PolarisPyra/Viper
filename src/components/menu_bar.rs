@@ -2,6 +2,12 @@ use crate::app::{Page, ViperApp};
 use eframe::egui;
 
 pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
+    let original_style = ctx.style().as_ref().clone();
+    let mut menu_style = original_style.clone();
+    menu_style.spacing.menu_spacing = 6.0;
+    style_menu_visuals(&mut menu_style.visuals);
+    ctx.set_style(menu_style);
+
     egui::TopBottomPanel::top("app-menu-bar")
         .exact_height(34.0)
         .frame(
@@ -21,6 +27,10 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.scope(|ui| {
+                        // Keep the menu triggers visually quiet; popup styling is
+                        // applied inside each menu closure to match album sort.
+                        crate::components::view_toolbar::style_sort_menu(ui);
+
                         let visuals = &mut ui.visuals_mut().widgets;
                         visuals.inactive.bg_fill = egui::Color32::TRANSPARENT;
                         visuals.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
@@ -36,13 +46,13 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                 .size(12.0)
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
-                                ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
-                                if ui.button("Preferences").clicked() {
+                                style_menu_popup(ui);
+                                if menu_item(ui, "Preferences").clicked() {
                                     app.show_preferences = true;
                                     ui.close_menu();
                                 }
                                 ui.separator();
-                                if ui.button("Quit").clicked() {
+                                if menu_item(ui, "Quit").clicked() {
                                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                     ui.close_menu();
                                 }
@@ -53,9 +63,10 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                 .size(12.0)
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
-                                ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
+                                style_menu_popup(ui);
                                 ui.menu_button("Add Library", |ui| {
-                                    if ui.button("Choose Music Folder").clicked() {
+                                    style_menu_popup(ui);
+                                    if menu_item(ui, "Choose Music Folder").clicked() {
                                         ui.close_menu();
                                         app.choose_folder();
                                     }
@@ -67,7 +78,7 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                 .size(12.0)
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
-                                ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
+                                style_menu_popup(ui);
                                 let has_current_track = app.playback.current.is_some();
                                 let can_play = has_current_track || app.selected_album.is_some();
                                 let play_label = if has_current_track && app.playback.is_paused() {
@@ -78,7 +89,7 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                     "Play Selected Album"
                                 };
                                 if ui
-                                    .add_enabled(can_play, egui::Button::new(play_label))
+                                    .add_enabled(can_play, egui::SelectableLabel::new(false, egui::RichText::new(play_label).color(egui::Color32::WHITE)))
                                     .clicked()
                                 {
                                     if has_current_track {
@@ -94,7 +105,7 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                 if ui
                                     .add_enabled(
                                         has_current_track,
-                                        egui::Button::new("Previous Track"),
+                                        egui::SelectableLabel::new(false, egui::RichText::new("Previous Track").color(egui::Color32::WHITE)),
                                     )
                                     .clicked()
                                 {
@@ -102,14 +113,14 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                     ui.close_menu();
                                 }
                                 if ui
-                                    .add_enabled(has_current_track, egui::Button::new("Next Track"))
+                                    .add_enabled(has_current_track, egui::SelectableLabel::new(false, egui::RichText::new("Next Track").color(egui::Color32::WHITE)))
                                     .clicked()
                                 {
                                     app.playback.skip_next(&app.library.tracks);
                                     ui.close_menu();
                                 }
                                 if ui
-                                    .add_enabled(has_current_track, egui::Button::new("Stop"))
+                                    .add_enabled(has_current_track, egui::SelectableLabel::new(false, egui::RichText::new("Stop").color(egui::Color32::WHITE)))
                                     .clicked()
                                 {
                                     app.playback.stop();
@@ -122,7 +133,7 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                                 .size(12.0)
                                 .color(egui::Color32::from_rgb(190, 196, 211)),
                             |ui| {
-                                ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
+                                style_menu_popup(ui);
                                 if ui
                                     .selectable_label(app.page == Page::Home, "Home")
                                     .clicked()
@@ -143,4 +154,65 @@ pub fn show(ctx: &egui::Context, app: &mut ViperApp) {
                 },
             );
         });
+
+    ctx.set_style(original_style);
+}
+
+fn style_menu_popup(ui: &mut egui::Ui) {
+    crate::components::view_toolbar::style_sort_menu(ui);
+    ui.set_min_width(220.0);
+    ui.spacing_mut().menu_margin = egui::Margin::same(8);
+    ui.spacing_mut().button_padding = egui::vec2(14.0, 5.0);
+    ui.spacing_mut().item_spacing.y = 4.0;
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    widgets.inactive.bg_stroke = egui::Stroke::NONE;
+    // Match the album sort popup's native hovered row visuals.
+    widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    widgets.active.bg_fill = egui::Color32::from_rgb(42, 46, 59);
+    widgets.active.weak_bg_fill = egui::Color32::from_rgb(42, 46, 59);
+    widgets.active.bg_stroke = egui::Stroke::NONE;
+    widgets.open.bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    widgets.open.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    widgets.open.bg_stroke = egui::Stroke::NONE;
+}
+
+fn style_menu_visuals(visuals: &mut egui::Visuals) {
+    let fill = egui::Color32::from_rgb(27, 31, 41);
+    let selected = egui::Color32::from_rgb(48, 52, 68);
+    let border = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61));
+
+    visuals.window_fill = fill;
+    visuals.window_stroke = border;
+    visuals.menu_corner_radius = egui::CornerRadius::same(8);
+    visuals.selection.bg_fill = selected;
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+    for widget in [
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        widget.bg_fill = fill;
+        widget.weak_bg_fill = fill;
+        widget.bg_stroke = border;
+    }
+    visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    visuals.widgets.open.bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    visuals.widgets.open.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
+}
+
+
+fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    ui.selectable_label(
+        false,
+        egui::RichText::new(label).color(egui::Color32::WHITE),
+    )
 }
