@@ -1,3 +1,4 @@
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -8,6 +9,7 @@ use std::{
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// /// Page shown when the application starts.
 pub enum StartupView {
     #[default]
     Home,
@@ -16,6 +18,7 @@ pub enum StartupView {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// /// Sort order for the album browser.
 pub enum AlbumSort {
     AlbumArtist,
     Id,
@@ -71,6 +74,7 @@ impl AlbumSort {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+/// /// Presentation style for the album browser.
 pub enum AlbumLayout {
     #[default]
     Grid,
@@ -78,13 +82,21 @@ pub enum AlbumLayout {
 }
 
 #[derive(Clone, Debug, Default)]
+/// /// Saved connection details for an SMB share.
 pub struct SambaSettings {
     pub share_url: String,
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub workgroup: String,
 }
 
+/// /// Load saved SMB connection details.
+/// ///
+/// /// # Returns
+/// /// The saved connection, or `None` when no connection is configured.
+/// ///
+/// /// # Errors
+/// /// Returns an I/O error if the database cannot be read.
 pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
     use rusqlite::OptionalExtension;
 
@@ -98,7 +110,7 @@ pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
                 Ok(SambaSettings {
                     share_url: row.get(0)?,
                     username: row.get(1)?,
-                    password: row.get(2)?,
+                    password: SecretString::from(row.get::<_, String>(2)?),
                     workgroup: row.get(3)?,
                 })
             },
@@ -107,6 +119,13 @@ pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
         .map_err(super::database::database_error)
 }
 
+/// /// Persist SMB connection details.
+/// ///
+/// /// # Arguments
+/// /// * `settings` - Share URL and credentials to save.
+/// ///
+/// /// # Errors
+/// /// Returns an I/O error if the database cannot be updated.
 pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
     let connection = super::database::open()?;
     connection
@@ -121,7 +140,7 @@ pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
             rusqlite::params![
                 settings.share_url,
                 settings.username,
-                settings.password,
+                settings.password.expose_secret(),
                 settings.workgroup,
             ],
         )
@@ -131,6 +150,7 @@ pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
+/// /// Persisted application preferences and library state.
 pub struct Settings {
     pub music_path: Option<PathBuf>,
     pub window_size: Option<[f32; 2]>,
@@ -178,6 +198,13 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// /// Load settings from SQLite, migrating legacy settings when necessary.
+    /// ///
+    /// /// # Returns
+    /// /// The stored settings, or defaults when no settings exist.
+    /// ///
+    /// /// # Errors
+    /// /// Returns an I/O error when settings cannot be decoded or persisted.
     pub fn load() -> io::Result<Self> {
         use rusqlite::OptionalExtension;
 
@@ -311,6 +338,10 @@ impl Settings {
         Ok(settings)
     }
 
+    /// /// Save settings and album state in one database transaction.
+    /// ///
+    /// /// # Errors
+    /// /// Returns an I/O error if encoding or database writes fail.
     pub fn save(&self) -> io::Result<()> {
         let mut connection = super::database::open()?;
         let transaction = connection
@@ -384,6 +415,13 @@ impl Settings {
             .map_err(super::database::database_error)
     }
 
+    /// /// Return the path to the application SQLite database.
+    /// ///
+    /// /// # Returns
+    /// /// The configured database path.
+    /// ///
+    /// /// # Errors
+    /// /// Returns an I/O error if the configuration directory is unavailable.
     pub fn file_path() -> io::Result<PathBuf> {
         super::database::database_path()
     }

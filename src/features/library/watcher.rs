@@ -10,6 +10,7 @@ use std::{
     sync::mpsc::{self, Receiver, TryRecvError},
 };
 
+/// /// Watches a local music folder and requests UI repaints for filesystem events.
 pub struct FileWatcher {
     // Keeping the watcher alive keeps the recursive OS watch registered.
     _watcher: RecommendedWatcher,
@@ -17,12 +18,24 @@ pub struct FileWatcher {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// /// A relevant file or directory change detected by [`FileWatcher`].
 pub enum FileChange {
     Upsert(PathBuf),
     Remove(PathBuf),
 }
 
 impl FileWatcher {
+    /// /// Start recursively watching a local music folder.
+    /// ///
+    /// /// # Arguments
+    /// /// * `root` - Folder to watch.
+    /// /// * `repaint` - egui context used to request redraws on events.
+    /// ///
+    /// /// # Returns
+    /// /// An active watcher.
+    /// ///
+    /// /// # Errors
+    /// /// Returns a notify error if the watcher cannot be created or registered.
     pub fn new(root: &Path, repaint: egui::Context) -> notify::Result<Self> {
         let (sender, events) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
@@ -36,6 +49,13 @@ impl FileWatcher {
         })
     }
 
+    /// /// Collect queued filesystem events and collapse duplicate paths.
+    /// ///
+    /// /// # Returns
+    /// /// Relevant file changes since the previous poll.
+    /// ///
+    /// /// # Errors
+    /// /// Returns an error if the operating system reports a watcher failure.
     pub fn poll(&self) -> Result<Vec<FileChange>, String> {
         let mut changed = HashSet::new();
         loop {

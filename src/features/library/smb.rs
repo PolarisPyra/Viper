@@ -1,7 +1,8 @@
 //! Direct SMB access through Pavão. Library paths are stored as `smb://` URLs;
-//! credentials stay in memory and are never written to the settings database.
+//! Credentials use redacted secret wrappers while held in application memory.
 
 use pavao::{SmbClient, SmbCredentials, SmbDirentType, SmbOpenOptions, SmbOptions};
+use secrecy::{ExposeSecret, SecretString};
 use std::{
     fs::File,
     io,
@@ -9,14 +10,35 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::UNIX_EPOCH,
 };
+use thiserror::Error;
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Default)]
 pub(crate) struct SmbAuth {
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub workgroup: String,
+}
+
+/// Failures that can occur while validating or accessing an SMB share.
+#[derive(Debug, Error)]
+pub(crate) enum SmbAccessError {
+    /// The URL does not include a valid server and share.
+    #[error("Enter an SMB server and share, for example smb://server/Music")]
+    InvalidUrl,
+    /// Credentials were embedded in the URL instead of supplied separately.
+    #[error("Enter the server and share without embedding credentials")]
+    CredentialsInUrl,
+    /// An SMB path could not be represented as UTF-8.
+    #[error("SMB path is not valid UTF-8")]
+    InvalidPathEncoding,
+    /// The SMB library rejected a client or remote operation.
+    #[error("SMB operation failed: {0}")]
+    Native(#[from] pavao::SmbError),
+    /// A local staging operation failed.
+    #[error("Local SMB staging failed: {0}")]
+    Io(#[from] io::Error),
 }
 
 struct SharePath {
@@ -26,16 +48,16 @@ struct SharePath {
 }
 
 impl SharePath {
-    fn parse(url: &str) -> Result<Self, String> {
+    fn parse(url: &str) -> Result<Self, SmbAccessError> {
         let remainder = url
             .strip_prefix("smb://")
-            .ok_or_else(|| "SMB library paths must start with smb://".to_owned())?;
-        let (server, path) = remainder.split_once('/').ok_or_else(|| {
-            "Enter an SMB server and share, for example smb://server/Music".to_owned()
-        })?;
+            .ok_or(SmbAccessError::InvalidUrl)?;
+        let (server, path) = remainder
+            .split_once('/')
+            .ok_or(SmbAccessError::InvalidUrl)?;
         let (share, path) = path.split_once('/').unwrap_or((path, ""));
         if server.is_empty() || share.is_empty() || server.contains('@') {
-            return Err("Enter the server and share without embedding credentials".into());
+            return Err(SmbAccessError::CredentialsInUrl);
         }
         Ok(Self {
             server: server.to_owned(),
@@ -44,17 +66,16 @@ impl SharePath {
         })
     }
 
-    fn client(&self, auth: &SmbAuth) -> Result<SmbClient, String> {
-        SmbClient::new(
+    fn client(&self, auth: &SmbAuth) -> Result<SmbClient, SmbAccessError> {
+        Ok(SmbClient::new(
             SmbCredentials::default()
                 .server(format!("smb://{}", self.server))
                 .share(&self.share)
                 .username(&auth.username)
-                .password(&auth.password)
+                .password(auth.password.expose_secret())
                 .workgroup(&auth.workgroup),
             SmbOptions::default(),
-        )
-        .map_err(|error| error.to_string())
+        )?)
     }
 }
 
@@ -63,7 +84,7 @@ pub(crate) struct SmbSession {
 }
 
 impl SmbSession {
-    pub(crate) fn new(root: &str, auth: &SmbAuth) -> Result<Self, String> {
+    pub(crate) fn new(root: &str, auth: &SmbAuth) -> Result<Self, SmbAccessError> {
         let share = SharePath::parse(root)?;
         Ok(Self {
             client: share.client(auth)?,
@@ -75,9 +96,11 @@ impl SmbSession {
         path: &Path,
     ) -> Result<super::tag_reader::TrackMetadata, super::tag_reader::ReaderMetadataError> {
         let parsed = SharePath::parse(path.to_str().ok_or_else(|| {
-            super::tag_reader::ReaderMetadataError::Failed("SMB path is not valid UTF-8".to_owned())
+            super::tag_reader::ReaderMetadataError::Failed(
+                SmbAccessError::InvalidPathEncoding.to_string(),
+            )
         })?)
-        .map_err(super::tag_reader::ReaderMetadataError::Failed)?;
+        .map_err(|error| super::tag_reader::ReaderMetadataError::Failed(error.to_string()))?;
         let remote = self
             .client
             .open_with(&parsed.path, SmbOpenOptions::default().read(true))
@@ -88,15 +111,11 @@ impl SmbSession {
         )
     }
 
-    pub(crate) fn stage_file(&self, path: &Path) -> Result<PathBuf, String> {
-        let parsed = SharePath::parse(
-            path.to_str()
-                .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
-        )?;
+    pub(crate) fn stage_file(&self, path: &Path) -> Result<PathBuf, SmbAccessError> {
+        let parsed = SharePath::parse(path.to_str().ok_or(SmbAccessError::InvalidPathEncoding)?)?;
         let mut remote = self
             .client
-            .open_with(&parsed.path, SmbOpenOptions::default().read(true))
-            .map_err(|error| error.to_string())?;
+            .open_with(&parsed.path, SmbOpenOptions::default().read(true))?;
         let name = Path::new(&parsed.path)
             .file_name()
             .and_then(|name| name.to_str())
@@ -106,19 +125,19 @@ impl SmbSession {
             std::process::id(),
             TEMP_ID.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(&temp_dir).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(&temp_dir)?;
         let temp = temp_dir.join(name);
-        let mut local = File::create(&temp).map_err(|error| error.to_string())?;
+        let mut local = File::create(&temp)?;
         if let Err(error) = io::copy(&mut remote, &mut local) {
             let _ = std::fs::remove_file(&temp);
             let _ = std::fs::remove_dir(&temp_dir);
-            return Err(error.to_string());
+            return Err(SmbAccessError::Io(error));
         }
         Ok(temp)
     }
 }
 
-pub(crate) fn validate_url(url: &str) -> Result<(), String> {
+pub(crate) fn validate_url(url: &str) -> Result<(), SmbAccessError> {
     SharePath::parse(url).map(|_| ())
 }
 
@@ -135,7 +154,7 @@ pub(crate) fn scan(
     root: &str,
     auth: &SmbAuth,
     cancel: &AtomicBool,
-) -> Result<Vec<SmbEntry>, String> {
+) -> Result<Vec<SmbEntry>, SmbAccessError> {
     let share = SharePath::parse(root)?;
     let client = share.client(auth)?;
     let mut files = Vec::new();
@@ -172,7 +191,7 @@ pub(crate) fn scan(
                 .collect(),
             Err(_) => client
                 .list_dir(&directory)
-                .map_err(|error| error.to_string())?
+                .map_err(SmbAccessError::from)?
                 .into_iter()
                 .map(|entry| (entry.name().to_owned(), entry.get_type(), None))
                 .collect(),
@@ -206,10 +225,9 @@ pub(crate) fn scan(
     Ok(files)
 }
 
-pub(crate) fn stage_file(path: &Path, auth: &SmbAuth) -> Result<PathBuf, String> {
+pub(crate) fn stage_file(path: &Path, auth: &SmbAuth) -> Result<PathBuf, SmbAccessError> {
     let session = SmbSession::new(
-        path.to_str()
-            .ok_or_else(|| "SMB path is not valid UTF-8".to_owned())?,
+        path.to_str().ok_or(SmbAccessError::InvalidPathEncoding)?,
         auth,
     )?;
     session.stage_file(path)

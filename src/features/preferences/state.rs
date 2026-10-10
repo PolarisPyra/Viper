@@ -1,5 +1,5 @@
 pub(crate) struct PreferencesState {
-    pub(crate) category: Option<super::Category>,
+    pub(crate) category: Option<super::screen::Category>,
     pub(crate) discord_application_id_draft: String,
     #[cfg(target_os = "linux")]
     pub(crate) smb_url_draft: String,

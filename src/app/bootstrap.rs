@@ -70,6 +70,13 @@ fn load_app_fonts() -> eframe::egui::FontDefinitions {
     definitions
 }
 
+/// /// Launch the native Viper application window.
+/// ///
+/// /// # Returns
+/// /// The result from the eframe event loop.
+/// ///
+/// /// # Errors
+/// /// Returns an eframe error if native application startup fails.
 pub fn run() -> eframe::Result<()> {
     let settings = Settings::load();
     let window_size = settings

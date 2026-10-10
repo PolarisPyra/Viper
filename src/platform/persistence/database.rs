@@ -24,6 +24,13 @@ fn config_directory() -> io::Result<PathBuf> {
     Ok(home.join(".config"))
 }
 
+/// /// Open the application database, apply pending migrations, and enable required pragmas.
+/// ///
+/// /// # Returns
+/// /// A ready SQLite connection.
+/// ///
+/// /// # Errors
+/// /// Returns an I/O error if the database cannot be opened or migrated.
 pub(crate) fn open() -> io::Result<Connection> {
     let path = database_path()?;
     let parent = path.parent().ok_or_else(|| {

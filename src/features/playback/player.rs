@@ -238,6 +238,7 @@ impl Playback {
             })?;
             Some(
                 crate::features::library::smb::stage_file(path, auth)
+                    .map_err(|error| error.to_string())
                     .map_err(|error| format!("Could not read SMB audio file: {error}"))?,
             )
         } else {

@@ -7,6 +7,14 @@ use std::{
     path::PathBuf,
 };
 
+/// /// Merge newly discovered tracks into an existing library.
+/// ///
+/// /// # Arguments
+/// /// * `library` - Library to update.
+/// /// * `discovered` - Tracks and artwork from an incremental scan.
+/// ///
+/// /// # Returns
+/// /// Number of tracks added.
 pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTracks) -> usize {
     let mut album_indices = HashMap::with_capacity(library.albums.len());
     let mut existing_paths = HashSet::with_capacity(library.tracks.len());
@@ -72,6 +80,14 @@ pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTrac
     added_count
 }
 
+/// /// Remove tracks under the supplied paths and return old-to-new track indexes.
+/// ///
+/// /// # Arguments
+/// /// * `library` - Library to update.
+/// /// * `removed_paths` - Removed file or directory paths.
+/// ///
+/// /// # Returns
+/// /// An index remap with `None` for removed tracks.
 pub fn remove_library_tracks(
     library: &mut Library,
     removed_paths: &[PathBuf],

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// /// Built-in color theme selected by the user.
 pub enum ThemeId {
     CatppuccinLatte,
     CatppuccinFrappe,

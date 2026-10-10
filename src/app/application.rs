@@ -7,6 +7,7 @@ use crate::{
     workbench::{Page, WorkbenchState},
 };
 use eframe::egui;
+use secrecy::ExposeSecret;
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -19,6 +20,7 @@ mod library_watcher;
 #[path = "runtime.rs"]
 mod runtime;
 
+/// /// Main application state and egui runtime integration.
 pub struct ViperApp {
     pub(crate) workbench: WorkbenchState,
     pub(crate) library: LibraryFeature,
@@ -36,6 +38,10 @@ pub struct ViperApp {
 }
 
 impl ViperApp {
+    /// /// Create the application from persisted settings, falling back to defaults on load errors.
+    /// ///
+    /// /// # Returns
+    /// /// A ready-to-run application instance.
     pub fn new() -> Self {
         Self::with_settings_result(Settings::load())
     }
@@ -73,7 +79,7 @@ impl ViperApp {
                 .unwrap_or_default();
             preferences.smb_password = saved_samba
                 .as_ref()
-                .map(|samba| samba.password.clone())
+                .map(|samba| samba.password.expose_secret().to_owned())
                 .unwrap_or_default();
             preferences.smb_workgroup = saved_samba
                 .as_ref()
@@ -153,11 +159,11 @@ impl ViperApp {
         let url = self.preferences.smb_url_draft.trim();
         let auth = crate::features::library::smb::SmbAuth {
             username: self.preferences.smb_username.trim().to_owned(),
-            password: self.preferences.smb_password.clone(),
+            password: secrecy::SecretString::from(self.preferences.smb_password.clone()),
             workgroup: self.preferences.smb_workgroup.trim().to_owned(),
         };
         if let Err(error) = crate::features::library::smb::validate_url(url) {
-            self.error = Some(error);
+            self.error = Some(error.to_string());
             return;
         }
         let samba_settings = crate::platform::persistence::settings::SambaSettings {
