@@ -1,6 +1,12 @@
 # Viper
 
-A desktop music player built with Rust and egui, centered on a browsing experience focused on album art, exploring your library, and playing tracks with Symphonia-backed decoding.
+## Why Viper exists
+
+Viper is a fast, album-centric native music player for Linux with a low memory footprint. It is designed to browse and play music from local folders or Samba shares, including libraries served by Navidrome.
+
+## Security
+
+If you save Samba credentials, Viper stores the password in its local SQLite database at `~/.config/viper/viper.sqlite3`. Anyone who can read that file may be able to retrieve the credentials.
 
 ## Requirements
 
