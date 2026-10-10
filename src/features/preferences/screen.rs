@@ -400,7 +400,7 @@ fn show_connections(
     {
         section_title(ui, "Samba / SMB share");
         ui.label(
-            "Connect directly to a network share. Share details are saved locally; the password is stored in a private .env file.",
+            "Connect directly to a network share. Connection details are stored in the local SQLite database for future access.",
         );
         ui.add_space(10.0);
         ui.label("Share folder URL");

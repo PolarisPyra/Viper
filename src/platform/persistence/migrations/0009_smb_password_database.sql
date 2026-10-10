@@ -1,0 +1,2 @@
+ALTER TABLE samba_settings
+ADD COLUMN password TEXT NOT NULL DEFAULT '';

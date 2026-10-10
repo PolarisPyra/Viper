@@ -107,7 +107,7 @@ pub struct SambaSettings {
     pub share_url: String,
     /// Username used to authenticate to the share.
     pub username: String,
-    /// Redacted password stored in the app-specific `.env` file.
+    /// Redacted password used to authenticate to the share and persisted in SQLite.
     pub password: SecretString,
     /// SMB workgroup or domain.
     pub workgroup: String,
@@ -119,36 +119,27 @@ pub struct SambaSettings {
 /// The saved connection, or `None` when no connection is configured.
 ///
 /// # Errors
-/// Returns an I/O error if the database or password environment file cannot be read.
+/// Returns an I/O error if the database cannot be read or migrated.
 pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
     use rusqlite::OptionalExtension;
 
     let connection = super::database::open()?;
-    let credentials = connection
+    connection
         .query_row(
-            "SELECT share_url, username, workgroup
+            "SELECT share_url, username, password, workgroup
              FROM samba_settings WHERE id = 1",
             [],
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
+                Ok(SambaSettings {
+                    share_url: row.get(0)?,
+                    username: row.get(1)?,
+                    password: SecretString::from(row.get::<_, String>(2)?),
+                    workgroup: row.get(3)?,
+                })
             },
         )
         .optional()
-        .map_err(super::database::database_error)?;
-    credentials
-        .map(|(share_url, username, workgroup)| {
-            Ok(SambaSettings {
-                share_url,
-                username,
-                password: SecretString::from(super::database::load_smb_password()?),
-                workgroup,
-            })
-        })
-        .transpose()
+        .map_err(super::database::database_error)
 }
 
 /// Persist SMB connection details.
@@ -157,19 +148,24 @@ pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
 /// * `settings` - Share URL and credentials to save.
 ///
 /// # Errors
-/// Returns an I/O error if the database or password environment file cannot be updated.
+/// Returns an I/O error if the database cannot be updated.
 pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
     let connection = super::database::open()?;
-    super::database::save_smb_password(settings.password.expose_secret())?;
     connection
         .execute(
-            "INSERT INTO samba_settings (id, share_url, username, workgroup)
-             VALUES (1, ?1, ?2, ?3)
+            "INSERT INTO samba_settings (id, share_url, username, password, workgroup)
+             VALUES (1, ?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET
                 share_url=excluded.share_url,
                 username=excluded.username,
+                password=excluded.password,
                 workgroup=excluded.workgroup",
-            rusqlite::params![settings.share_url, settings.username, settings.workgroup,],
+            rusqlite::params![
+                settings.share_url,
+                settings.username,
+                settings.password.expose_secret(),
+                settings.workgroup,
+            ],
         )
         .map_err(super::database::database_error)?;
     Ok(())
