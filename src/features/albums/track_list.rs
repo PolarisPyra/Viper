@@ -67,9 +67,16 @@ pub(crate) fn show(
                     ui.set_min_height(content_height);
                     ui.set_max_height(content_height);
 
+                    let release_year = album
+                        .tracks
+                        .iter()
+                        .filter_map(|index| library.tracks.get(*index)?.release_year)
+                        .min()
+                        .map_or_else(|| "—".to_owned(), |year| year.to_string());
                     draw_track_panel_heading(
                         ui,
                         album.tracks.len(),
+                        &release_year,
                         &mut workbench.show_album_details,
                     );
                     ui.add_space(15.0);
@@ -128,7 +135,12 @@ fn draw_track_panel_background(ui: &egui::Ui) {
     );
 }
 
-fn draw_track_panel_heading(ui: &mut egui::Ui, track_count: usize, open: &mut bool) {
+fn draw_track_panel_heading(
+    ui: &mut egui::Ui,
+    track_count: usize,
+    release_year: &str,
+    open: &mut bool,
+) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
@@ -139,11 +151,20 @@ fn draw_track_panel_heading(ui: &mut egui::Ui, track_count: usize, open: &mut bo
                     .color(colors.subtle),
             );
             ui.add_space(2.0);
-            ui.label(
-                egui::RichText::new(format!("{track_count} songs"))
-                    .size(12.0)
-                    .color(colors.muted),
-            );
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.label(
+                    egui::RichText::new(format!("{track_count} songs"))
+                        .size(12.0)
+                        .color(colors.muted),
+                );
+                ui.label(egui::RichText::new("·").size(12.0).color(colors.subtle));
+                ui.label(
+                    egui::RichText::new(release_year)
+                        .size(12.0)
+                        .color(colors.muted),
+                );
+            });
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (rect, response) =
