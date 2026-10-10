@@ -9,34 +9,50 @@ use std::{
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// /// Page shown when the application starts.
+/// Page shown when the application starts.
 pub enum StartupView {
+    /// Open the home screen.
     #[default]
     Home,
+    /// Open the album browser.
     Albums,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// /// Sort order for the album browser.
+/// Sort order for the album browser.
 pub enum AlbumSort {
+    /// Sort by album artist.
     AlbumArtist,
+    /// Sort by the stable library identifier.
     Id,
+    /// Sort by album artist metadata.
     Artist,
+    /// Sort by total album duration.
     Duration,
+    /// Sort by play count, highest first.
     MostPlayed,
+    /// Sort by album name.
     #[default]
     Name,
+    /// Shuffle the album order.
     Random,
+    /// Sort by user rating.
     Rating,
+    /// Sort by when the album was added.
     RecentlyAdded,
+    /// Sort by most recent playback.
     RecentlyPlayed,
+    /// Sort by number of tracks.
     SongCount,
+    /// Place favorite albums first.
     Favorited,
+    /// Sort by release year.
     ReleaseYear,
 }
 
 impl AlbumSort {
+    /// Every album sorting option shown by the application.
     pub const ALL: [Self; 13] = [
         Self::AlbumArtist,
         Self::Id,
@@ -53,6 +69,7 @@ impl AlbumSort {
         Self::ReleaseYear,
     ];
 
+    /// Return the display label for this sorting option.
     pub fn label(self) -> &'static str {
         match self {
             Self::AlbumArtist => "Album Artist",
@@ -74,75 +91,85 @@ impl AlbumSort {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-/// /// Presentation style for the album browser.
+/// Presentation style for the album browser.
 pub enum AlbumLayout {
+    /// Show albums as a cover grid.
     #[default]
     Grid,
+    /// Show albums as a text list.
     List,
 }
 
 #[derive(Clone, Debug, Default)]
-/// /// Saved connection details for an SMB share.
+/// Saved SMB share location and authentication details.
 pub struct SambaSettings {
+    /// SMB URL identifying the server and share.
     pub share_url: String,
+    /// Username used to authenticate to the share.
     pub username: String,
+    /// Redacted password stored in the app-specific `.env` file.
     pub password: SecretString,
+    /// SMB workgroup or domain.
     pub workgroup: String,
 }
 
-/// /// Load saved SMB connection details.
-/// ///
-/// /// # Returns
-/// /// The saved connection, or `None` when no connection is configured.
-/// ///
-/// /// # Errors
-/// /// Returns an I/O error if the database cannot be read.
+/// Load saved SMB connection details.
+///
+/// # Returns
+/// The saved connection, or `None` when no connection is configured.
+///
+/// # Errors
+/// Returns an I/O error if the database or password environment file cannot be read.
 pub fn load_samba_settings() -> io::Result<Option<SambaSettings>> {
     use rusqlite::OptionalExtension;
 
     let connection = super::database::open()?;
-    connection
+    let credentials = connection
         .query_row(
-            "SELECT share_url, username, password, workgroup
+            "SELECT share_url, username, workgroup
              FROM samba_settings WHERE id = 1",
             [],
             |row| {
-                Ok(SambaSettings {
-                    share_url: row.get(0)?,
-                    username: row.get(1)?,
-                    password: SecretString::from(row.get::<_, String>(2)?),
-                    workgroup: row.get(3)?,
-                })
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             },
         )
         .optional()
-        .map_err(super::database::database_error)
+        .map_err(super::database::database_error)?;
+    credentials
+        .map(|(share_url, username, workgroup)| {
+            Ok(SambaSettings {
+                share_url,
+                username,
+                password: SecretString::from(super::database::load_smb_password()?),
+                workgroup,
+            })
+        })
+        .transpose()
 }
 
-/// /// Persist SMB connection details.
-/// ///
-/// /// # Arguments
-/// /// * `settings` - Share URL and credentials to save.
-/// ///
-/// /// # Errors
-/// /// Returns an I/O error if the database cannot be updated.
+/// Persist SMB connection details.
+///
+/// # Arguments
+/// * `settings` - Share URL and credentials to save.
+///
+/// # Errors
+/// Returns an I/O error if the database or password environment file cannot be updated.
 pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
     let connection = super::database::open()?;
+    super::database::save_smb_password(settings.password.expose_secret())?;
     connection
         .execute(
-            "INSERT INTO samba_settings (id, share_url, username, password, workgroup)
-             VALUES (1, ?1, ?2, ?3, ?4)
+            "INSERT INTO samba_settings (id, share_url, username, workgroup)
+             VALUES (1, ?1, ?2, ?3)
              ON CONFLICT(id) DO UPDATE SET
                 share_url=excluded.share_url,
                 username=excluded.username,
-                password=excluded.password,
                 workgroup=excluded.workgroup",
-            rusqlite::params![
-                settings.share_url,
-                settings.username,
-                settings.password.expose_secret(),
-                settings.workgroup,
-            ],
+            rusqlite::params![settings.share_url, settings.username, settings.workgroup,],
         )
         .map_err(super::database::database_error)?;
     Ok(())
@@ -150,25 +177,43 @@ pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
-/// /// Persisted application preferences and library state.
+/// Persisted application preferences and library state.
 pub struct Settings {
+    /// Selected local folder or SMB share URL.
     pub music_path: Option<PathBuf>,
+    /// Last saved application window size in logical pixels.
     pub window_size: Option<[f32; 2]>,
+    /// Page opened when the application starts.
     pub startup_view: StartupView,
+    /// Current left sidebar width in logical pixels.
     pub left_panel_width: f32,
+    /// Whether the left sidebar is hidden.
     pub left_panel_hidden: bool,
+    /// Whether sidebar entries display icons without their labels.
     pub compact_sidebar: bool,
+    /// Selected application color theme.
     pub theme: crate::shared::ui::theme::ThemeId,
+    /// Current right panel width in logical pixels.
     pub right_panel_width: f32,
+    /// Playback volume as an integer percentage from 0 to 100.
     pub volume: u8,
+    /// Selected album sort order.
     pub album_sort: AlbumSort,
+    /// Whether album sorting is ascending.
     pub sort_ascending: bool,
+    /// Stable keys of albums marked as favorites.
     pub favorite_albums: BTreeSet<String>,
+    /// User ratings keyed by stable album key.
     pub album_ratings: BTreeMap<String, u8>,
+    /// Playback counts keyed by stable album key.
     pub album_play_counts: BTreeMap<String, u64>,
+    /// Unix timestamps of each album's most recent playback.
     pub album_last_played: BTreeMap<String, u64>,
+    /// Unix timestamps recording when each album was added.
     pub album_added: BTreeMap<String, u64>,
+    /// Optional Discord Rich Presence application ID.
     pub discord_application_id: Option<String>,
+    /// Selected album presentation layout.
     pub album_layout: AlbumLayout,
 }
 
@@ -198,13 +243,13 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// /// Load settings from SQLite, migrating legacy settings when necessary.
-    /// ///
-    /// /// # Returns
-    /// /// The stored settings, or defaults when no settings exist.
-    /// ///
-    /// /// # Errors
-    /// /// Returns an I/O error when settings cannot be decoded or persisted.
+    /// Load settings from SQLite, migrating legacy settings when necessary.
+    ///
+    /// # Returns
+    /// The stored settings, or defaults when no settings exist.
+    ///
+    /// # Errors
+    /// Returns an I/O error when settings cannot be decoded or persisted.
     pub fn load() -> io::Result<Self> {
         use rusqlite::OptionalExtension;
 
@@ -338,10 +383,10 @@ impl Settings {
         Ok(settings)
     }
 
-    /// /// Save settings and album state in one database transaction.
-    /// ///
-    /// /// # Errors
-    /// /// Returns an I/O error if encoding or database writes fail.
+    /// Save settings and album state in one database transaction.
+    ///
+    /// # Errors
+    /// Returns an I/O error if encoding or database writes fail.
     pub fn save(&self) -> io::Result<()> {
         let mut connection = super::database::open()?;
         let transaction = connection
@@ -415,13 +460,13 @@ impl Settings {
             .map_err(super::database::database_error)
     }
 
-    /// /// Return the path to the application SQLite database.
-    /// ///
-    /// /// # Returns
-    /// /// The configured database path.
-    /// ///
-    /// /// # Errors
-    /// /// Returns an I/O error if the configuration directory is unavailable.
+    /// Return the path to the application SQLite database.
+    ///
+    /// # Returns
+    /// The configured database path.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the configuration directory is unavailable.
     pub fn file_path() -> io::Result<PathBuf> {
         super::database::database_path()
     }

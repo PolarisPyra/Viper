@@ -6,6 +6,7 @@ use crate::{
     platform::persistence::settings::{Settings, StartupView},
     workbench::{Page, WorkbenchState},
 };
+use anyhow::Context;
 use eframe::egui;
 use secrecy::ExposeSecret;
 use std::{
@@ -20,7 +21,7 @@ mod library_watcher;
 #[path = "runtime.rs"]
 mod runtime;
 
-/// /// Main application state and egui runtime integration.
+/// Main application state and egui runtime integration.
 pub struct ViperApp {
     pub(crate) workbench: WorkbenchState,
     pub(crate) library: LibraryFeature,
@@ -38,10 +39,10 @@ pub struct ViperApp {
 }
 
 impl ViperApp {
-    /// /// Create the application from persisted settings, falling back to defaults on load errors.
-    /// ///
-    /// /// # Returns
-    /// /// A ready-to-run application instance.
+    /// Create the application from persisted settings, falling back to defaults on load errors.
+    ///
+    /// # Returns
+    /// A ready-to-run application instance.
     pub fn new() -> Self {
         Self::with_settings_result(Settings::load())
     }
@@ -156,37 +157,36 @@ impl ViperApp {
 
     #[cfg(target_os = "linux")]
     pub(crate) fn connect_smb_share(&mut self) {
-        let url = self.preferences.smb_url_draft.trim();
-        let auth = crate::features::library::smb::SmbAuth {
-            username: self.preferences.smb_username.trim().to_owned(),
-            password: secrecy::SecretString::from(self.preferences.smb_password.clone()),
-            workgroup: self.preferences.smb_workgroup.trim().to_owned(),
-        };
-        if let Err(error) = crate::features::library::smb::validate_url(url) {
-            self.error = Some(error.to_string());
-            return;
-        }
-        let samba_settings = crate::platform::persistence::settings::SambaSettings {
-            share_url: url.to_owned(),
-            username: auth.username.clone(),
-            password: auth.password.clone(),
-            workgroup: auth.workgroup.clone(),
-        };
-        if let Err(error) =
+        let url = self.preferences.smb_url_draft.trim().to_owned();
+        let result = (|| -> anyhow::Result<()> {
+            let auth = crate::features::library::smb::SmbAuth {
+                username: self.preferences.smb_username.trim().to_owned(),
+                password: secrecy::SecretString::from(self.preferences.smb_password.clone()),
+                workgroup: self.preferences.smb_workgroup.trim().to_owned(),
+            };
+            crate::features::library::smb::validate_url(&url)
+                .context("Could not connect to SMB share")?;
+            let samba_settings = crate::platform::persistence::settings::SambaSettings {
+                share_url: url.clone(),
+                username: auth.username.clone(),
+                password: auth.password.clone(),
+                workgroup: auth.workgroup.clone(),
+            };
             crate::platform::persistence::settings::save_samba_settings(&samba_settings)
-        {
-            self.error = Some(format!("Could not save SMB settings: {error}"));
-            return;
+                .context("Could not save SMB settings")?;
+            let path = PathBuf::from(url);
+            self.settings.music_path = Some(path.clone());
+            self.settings
+                .save()
+                .context("Could not save SMB location")?;
+            self.playback.set_smb_auth(auth.clone());
+            self.smb_auth = Some(auth);
+            self.start_scan(path);
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.error = Some(format!("{error:#}"));
         }
-        let path = PathBuf::from(url);
-        self.settings.music_path = Some(path.clone());
-        if let Err(error) = self.settings.save() {
-            self.error = Some(format!("Could not save SMB location: {error}"));
-            return;
-        }
-        self.playback.set_smb_auth(auth.clone());
-        self.smb_auth = Some(auth);
-        self.start_scan(path);
     }
 
     pub(crate) fn save_settings(&mut self) {

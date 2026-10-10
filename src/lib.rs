@@ -1,3 +1,6 @@
+//! Viper is a native music library browser and player.
+//!
+//! The crate exposes the application entry point and feature-level library APIs.
 pub mod app;
 pub mod features;
 pub(crate) mod platform;

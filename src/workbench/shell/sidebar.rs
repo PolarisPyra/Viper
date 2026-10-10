@@ -15,7 +15,7 @@ struct ResizeState {
     pending_save: bool,
 }
 
-pub fn show(
+pub(in crate::workbench) fn show(
     ctx: &egui::Context,
     settings: &mut Settings,
     workbench: &mut WorkbenchState,

@@ -1,6 +1,7 @@
 
 # Compiled files, backups, debug data, and logs (e.g., target/, *.rs.bk, *.pdb, mutants.out/, rustc-ice-*.txt)
 target/
+.env
 **/*.rs.bk
 *.pdb
 **/mutants.out*/

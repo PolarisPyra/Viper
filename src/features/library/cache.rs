@@ -1,3 +1,4 @@
+//! Persistent metadata cache for local audio tracks.
 use crate::{features::library::Track, platform::persistence::database};
 use rusqlite::{params, types::Type, Row};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use std::{
 const TRACK_METADATA_VERSION: u8 = 1;
 
 #[derive(Default)]
-/// /// Persistent metadata cache for local audio tracks.
+/// Persistent metadata cache for local audio tracks.
 pub struct TrackMetadataCache {
     entries: BTreeMap<PathBuf, CachedTrack>,
 }
@@ -27,10 +28,10 @@ struct CachedTrack {
 }
 
 impl TrackMetadataCache {
-    /// /// Load cached track metadata from SQLite or the legacy cache.
-    /// ///
-    /// /// # Returns
-    /// /// A cache that can serve metadata for unchanged files.
+    /// Load cached track metadata from SQLite or the legacy cache.
+    ///
+    /// # Returns
+    /// A cache that can serve metadata for unchanged files. Unreadable cache data is ignored.
     pub fn load() -> Self {
         let mut cache = Self {
             entries: load_database_entries(),
@@ -46,14 +47,14 @@ impl TrackMetadataCache {
         cache
     }
 
-    /// /// Get cached metadata when the file size and modification time still match.
-    /// ///
-    /// /// # Arguments
-    /// /// * `path` - Track path.
-    /// /// * `metadata` - Current filesystem metadata.
-    /// ///
-    /// /// # Returns
-    /// /// A cloned track with its current path, or `None` when the entry is stale or absent.
+    /// Get cached metadata when the file size and modification time still match.
+    ///
+    /// # Arguments
+    /// * `path` - Track path.
+    /// * `metadata` - Current filesystem metadata.
+    ///
+    /// # Returns
+    /// A cloned track with its current path, or `None` when the entry is stale or absent.
     pub fn get(&self, path: &Path, metadata: &fs::Metadata) -> Option<Track> {
         let entry = self.entries.get(path)?;
         let modified = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
@@ -68,12 +69,12 @@ impl TrackMetadataCache {
         })
     }
 
-    /// /// Add or replace a cached track using its current filesystem signature.
-    /// ///
-    /// /// # Arguments
-    /// /// * `path` - Track path.
-    /// /// * `metadata` - Filesystem metadata used to validate future cache hits.
-    /// /// * `track` - Track data to cache.
+    /// Add or replace a cached track using its current filesystem signature.
+    ///
+    /// # Arguments
+    /// * `path` - Track path.
+    /// * `metadata` - Filesystem metadata used to validate future cache hits.
+    /// * `track` - Track data to cache.
     pub fn insert(&mut self, path: PathBuf, metadata: &fs::Metadata, mut track: Track) {
         let Ok(modified) = metadata.modified().and_then(|time| {
             time.duration_since(UNIX_EPOCH)
@@ -94,7 +95,7 @@ impl TrackMetadataCache {
         );
     }
 
-    /// /// Persist the cache to SQLite.
+    /// Persist the cache to SQLite.
     pub fn save(self) {
         self.persist();
     }

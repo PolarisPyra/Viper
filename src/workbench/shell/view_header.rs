@@ -4,7 +4,7 @@ use crate::{
 };
 use eframe::egui;
 
-pub fn show(
+pub(in crate::workbench) fn show(
     ctx: &egui::Context,
     workbench: &WorkbenchState,
     library: &mut LibraryFeature,

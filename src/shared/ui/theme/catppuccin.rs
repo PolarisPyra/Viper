@@ -1,4 +1,4 @@
-//! Adapter for https://github.com/catppuccin/egui (egui 0.31 feature).
+//! Adapter for <https://github.com/catppuccin/egui> (egui 0.31 feature).
 use super::{Palette, ThemeDefinition};
 use eframe::egui;
 

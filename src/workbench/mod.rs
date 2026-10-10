@@ -1,42 +1,18 @@
 mod content_host;
+mod context;
 mod shell;
 mod state;
 
+pub(crate) use context::{WorkbenchAction, WorkbenchContext};
 pub(crate) use state::{Page, WorkbenchState};
 
-use crate::{
-    features::{
-        library::{artwork::ArtworkCache, state::LibraryFeature},
-        playback::Playback,
-        preferences::PreferencesState,
-    },
-    platform::persistence::settings::Settings,
-};
 use eframe::egui;
-
-pub(crate) struct WorkbenchContext<'a> {
-    pub(crate) state: &'a mut WorkbenchState,
-    pub(crate) library: &'a mut LibraryFeature,
-    pub(crate) playback: &'a mut Playback,
-    pub(crate) settings: &'a mut Settings,
-    pub(crate) preferences: &'a mut PreferencesState,
-    pub(crate) artwork_cache: &'a mut ArtworkCache,
-    pub(crate) error: &'a mut Option<String>,
-    pub(crate) dismissed_notice_signature: &'a mut Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum WorkbenchAction {
-    ChooseMusicFolder,
-    SaveSettings,
-    ConnectSmbShare,
-}
 
 pub(crate) fn show(
     ctx: &egui::Context,
     context: &mut WorkbenchContext<'_>,
 ) -> Vec<WorkbenchAction> {
-    let mut actions = Vec::new();
+    let mut actions = Vec::with_capacity(2);
     if shell::menu_bar::show(ctx, context.state, context.library, context.playback)
         == Some(shell::menu_bar::MenuBarAction::ChooseMusicFolder)
     {

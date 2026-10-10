@@ -1,4 +1,4 @@
-//! Rosé Pine palette adapter. Source: https://rosepinetheme.com/palette/
+//! Rosé Pine palette adapter. Source: <https://rosepinetheme.com/palette/>
 use super::{Palette, ThemeDefinition};
 use eframe::egui;
 

@@ -1,3 +1,4 @@
+//! Audio library models, scanning, metadata caches, and filesystem watching.
 pub(crate) mod artwork;
 mod audio;
 pub(crate) mod background;

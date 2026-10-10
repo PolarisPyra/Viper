@@ -23,8 +23,13 @@ pub(super) struct TrackMetadata {
     pub(super) artwork: Option<Vec<u8>>,
 }
 
+#[derive(Debug, thiserror::Error)]
 pub(super) enum ReaderMetadataError {
+    /// The media file is empty and contains no readable audio stream.
+    #[error("media file is empty")]
     Empty,
+    /// The metadata reader failed to parse the media file.
+    #[error("metadata read failed: {0}")]
     Failed(String),
 }
 

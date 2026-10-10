@@ -12,7 +12,7 @@ use std::time::Duration;
 const PANEL_HEIGHT: f32 = 112.0;
 const TRACK_ART_SIZE: f32 = 68.0;
 
-pub fn show(
+pub(in crate::workbench) fn show(
     ctx: &egui::Context,
     playback: &mut Playback,
     library: &LibraryFeature,

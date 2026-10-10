@@ -1,3 +1,4 @@
+//! Native application state and startup entry point.
 mod application;
 mod bootstrap;
 

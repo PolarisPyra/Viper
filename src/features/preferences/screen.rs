@@ -157,14 +157,21 @@ fn category_tabs(ui: &mut egui::Ui, preferences: &mut PreferencesState) {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-/// /// Preferences page currently selected in the preferences dialog.
+/// Preferences page currently selected in the preferences dialog.
 pub enum Category {
+    /// General application options.
     General,
+    /// Audio device and volume options.
     Audio,
+    /// Local library and SMB connection options.
     Connections,
+    /// Application color theme options.
     Theme,
+    /// Sidebar and other view options.
     View,
+    /// External service options.
     Services,
+    /// Application version and information.
     About,
 }
 
@@ -393,7 +400,7 @@ fn show_connections(
     {
         section_title(ui, "Samba / SMB share");
         ui.label(
-            "Connect directly to a network share. Connection details are stored in the local SQLite database for future access.",
+            "Connect directly to a network share. Share details are saved locally; the password is stored in a private .env file.",
         );
         ui.add_space(10.0);
         ui.label("Share folder URL");

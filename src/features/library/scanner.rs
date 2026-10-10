@@ -17,15 +17,26 @@ use std::{
 
 use super::tag_reader::read_metadata;
 
-/// /// Scan a local or SMB library root and return its tracks and albums.
-/// ///
-/// /// # Arguments
-/// /// * `root` - Folder path or SMB URL to scan.
-/// /// * `cancel` - Atomic flag set to stop the scan.
-/// /// * `progress` - Shared progress counters updated during the scan.
-/// ///
-/// /// # Returns
-/// /// The scanned library. Scan-level failures are recorded in the returned value.
+/// Scan a local or SMB library root and return its tracks and albums.
+///
+/// # Arguments
+/// * `root` - Folder path or SMB URL to scan.
+/// * `cancel` - Atomic flag set to stop the scan.
+/// * `progress` - Shared progress counters updated during the scan.
+///
+/// # Returns
+/// The scanned library. Scan-level failures are recorded in the returned value.
+///
+/// # Examples
+/// ```no_run
+/// use std::{path::Path, sync::atomic::AtomicBool};
+/// use viper::features::library::{scan_library, ScanProgress};
+///
+/// let cancel = AtomicBool::new(false);
+/// let progress = ScanProgress::default();
+/// let library = scan_library(Path::new("/music"), &cancel, &progress);
+/// println!("Found {} tracks", library.tracks.len());
+/// ```
 pub fn scan_library(root: &Path, cancel: &AtomicBool, progress: &ScanProgress) -> Library {
     #[cfg(target_os = "linux")]
     return scan_library_with_auth(root, cancel, progress, None);
@@ -335,14 +346,14 @@ pub(crate) fn scan_library_with_auth(
     }
 }
 
-/// /// Scan changed local paths for tracks and album artwork.
-/// ///
-/// /// # Arguments
-/// /// * `paths` - Paths to inspect.
-/// /// * `cancel` - Atomic flag set to stop the scan.
-/// ///
-/// /// # Returns
-/// /// Newly discovered tracks and their album artwork.
+/// Scan changed local paths for tracks and album artwork.
+///
+/// # Arguments
+/// * `paths` - Paths to inspect.
+/// * `cancel` - Atomic flag set to stop the scan.
+///
+/// # Returns
+/// Newly discovered tracks and their album artwork.
 pub fn scan_added_tracks(paths: &[PathBuf], cancel: &AtomicBool) -> DiscoveredTracks {
     let mut candidates = Vec::new();
     let mut visited = HashSet::new();

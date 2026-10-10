@@ -1,9 +1,12 @@
 use crate::features::library::{Album, Track};
 use rodio::{Decoder, MixerDeviceSink, Player};
-use std::{collections::VecDeque, fs::File, time::Duration};
+use std::{collections::VecDeque, fs::File, path::Path, time::Duration};
 
+/// Current audio playback state, queue, history, and volume.
 pub struct Playback {
+    /// Index of the currently playing track in the supplied library, if any.
     pub current: Option<usize>,
+    /// Most recent playback or seek error shown to the user.
     pub error: Option<String>,
     output: Option<MixerDeviceSink>,
     player: Option<Player>,
@@ -11,6 +14,7 @@ pub struct Playback {
     history: VecDeque<usize>,
     position: Duration,
     paused: bool,
+    /// Playback volume as a percentage from 0 to 100.
     pub volume: u8,
     #[cfg(target_os = "linux")]
     smb_auth: Option<crate::features::library::smb::SmbAuth>,
@@ -21,11 +25,20 @@ impl Playback {
     pub(crate) fn set_smb_auth(&mut self, auth: crate::features::library::smb::SmbAuth) {
         self.smb_auth = Some(auth);
     }
+
+    /// Set the playback volume and apply it to the active player.
+    ///
+    /// # Arguments
+    /// * `volume` - Volume percentage; values above 100 are clamped during playback.
     pub fn set_volume(&mut self, volume: u8) {
         self.volume = volume;
         self.apply_volume();
     }
 
+    /// Temporarily apply a volume value while a volume control is being adjusted.
+    ///
+    /// # Arguments
+    /// * `volume` - Preview volume percentage; values above 100 are clamped during playback.
     pub fn preview_volume(&mut self, volume: u8) {
         self.volume = volume;
         self.apply_volume();
@@ -37,16 +50,19 @@ impl Playback {
         }
     }
 
+    /// Return whether a track is currently playing and not paused.
     pub fn is_playing(&self) -> bool {
         self.current.is_some()
             && !self.paused
             && self.player.as_ref().is_some_and(|player| !player.empty())
     }
 
+    /// Return whether playback is paused.
     pub fn is_paused(&self) -> bool {
         self.paused
     }
 
+    /// Return the current playback position.
     pub fn position(&self) -> Duration {
         if self.paused {
             self.position
@@ -55,6 +71,11 @@ impl Playback {
         }
     }
 
+    /// Seek within the current track, clamping the position to its known duration.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks indexed by playback state.
+    /// * `position` - Requested position within the current track.
     pub fn seek(&mut self, tracks: &[Track], position: Duration) {
         let Some(index) = self.current else {
             return;
@@ -73,6 +94,7 @@ impl Playback {
         }
     }
 
+    /// Pause playback or resume it when already paused.
     pub fn toggle_pause(&mut self) {
         let Some(player) = &self.player else {
             return;
@@ -87,12 +109,22 @@ impl Playback {
         }
     }
 
+    /// Replace the current queue with one track and begin playing it.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks.
+    /// * `track_index` - Index of the track to play.
     pub fn play(&mut self, tracks: &[Track], track_index: usize) {
         self.stop();
         self.error = None;
         self.start_track(tracks, track_index);
     }
 
+    /// Play an album from its first track and queue the remaining tracks.
+    ///
+    /// # Arguments
+    /// * `album` - Album whose track indexes define playback order.
+    /// * `tracks` - Current library tracks.
     pub fn play_album(&mut self, album: &Album, tracks: &[Track]) {
         let Some((&first, rest)) = album.tracks.split_first() else {
             return;
@@ -103,6 +135,12 @@ impl Playback {
         self.start_track(tracks, first);
     }
 
+    /// Play a track and queue the following tracks from its album.
+    ///
+    /// # Arguments
+    /// * `album` - Album containing the selected track.
+    /// * `tracks` - Current library tracks.
+    /// * `track_index` - Index of the selected track in `tracks`.
     pub fn play_track_in_album(&mut self, album: &Album, tracks: &[Track], track_index: usize) {
         let Some(position) = album.tracks.iter().position(|&index| index == track_index) else {
             return;
@@ -114,6 +152,10 @@ impl Playback {
         self.start_track(tracks, track_index);
     }
 
+    /// Start the next queued track when the active track has ended.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks.
     pub fn advance_if_finished(&mut self, tracks: &[Track]) {
         let finished = self
             .player
@@ -136,6 +178,10 @@ impl Playback {
         }
     }
 
+    /// Skip the current track and start the next queued track, if one exists.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks.
     pub fn skip_next(&mut self, tracks: &[Track]) {
         if let Some(next) = self.queue.pop_front() {
             if let Some(track) = self.current {
@@ -146,6 +192,10 @@ impl Playback {
         }
     }
 
+    /// Return to the most recently played track, or restart the current track.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks.
     pub fn previous(&mut self, tracks: &[Track]) {
         let Some(previous) = self.history.pop_back() else {
             if let Some(current) = self.current {
@@ -161,12 +211,17 @@ impl Playback {
         self.start_track(tracks, previous);
     }
 
+    /// Stop the active track and clear the queue and playback history.
     pub fn stop(&mut self) {
         self.stop_current();
         self.queue.clear();
         self.history.clear();
     }
 
+    /// Update stored track indexes after the library has been changed.
+    ///
+    /// # Arguments
+    /// * `remap` - Old-to-new track index mapping; `None` marks a removed track.
     pub fn remap_tracks(&mut self, remap: &[Option<usize>]) {
         if let Some(current) = self.current {
             match remap.get(current).copied().flatten() {
@@ -223,7 +278,7 @@ impl Playback {
         }
     }
 
-    fn open_track(&mut self, path: &std::path::Path) -> Result<Player, String> {
+    fn open_track(&mut self, path: &Path) -> Result<Player, String> {
         if self.output.is_none() {
             let mut output = rodio::DeviceSinkBuilder::open_default_sink()
                 .map_err(|error| format!("Could not open audio output: {error}"))?;

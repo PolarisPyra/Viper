@@ -9,7 +9,7 @@ pub(crate) enum MenuBarAction {
     ChooseMusicFolder,
 }
 
-pub fn show(
+pub(in crate::workbench) fn show(
     ctx: &egui::Context,
     workbench: &mut WorkbenchState,
     library: &LibraryFeature,
