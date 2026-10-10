@@ -63,8 +63,8 @@ pub fn show(
                         visuals.hovered.weak_bg_fill = colors.hover;
                         visuals.hovered.bg_stroke = egui::Stroke::NONE;
                         visuals.hovered.corner_radius = egui::CornerRadius::same(5);
-                        visuals.active.bg_fill = colors.selected;
-                        visuals.active.weak_bg_fill = colors.selected;
+                        visuals.active.bg_fill = colors.hover;
+                        visuals.active.weak_bg_fill = colors.hover;
                         visuals.active.bg_stroke = egui::Stroke::NONE;
                         visuals.open.bg_fill = colors.hover;
                         visuals.open.weak_bg_fill = colors.hover;
@@ -225,8 +225,8 @@ fn style_menu_popup(ui: &mut egui::Ui) {
     // Match the album sort popup's native hovered row visuals.
     widgets.hovered.bg_fill = colors.hover;
     widgets.hovered.weak_bg_fill = colors.hover;
-    widgets.active.bg_fill = colors.selected;
-    widgets.active.weak_bg_fill = colors.selected;
+    widgets.active.bg_fill = colors.hover;
+    widgets.active.weak_bg_fill = colors.hover;
     widgets.active.bg_stroke = egui::Stroke::NONE;
     widgets.open.bg_fill = colors.hover;
     widgets.open.weak_bg_fill = colors.hover;

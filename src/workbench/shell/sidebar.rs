@@ -4,6 +4,17 @@ use crate::{
 };
 use eframe::egui;
 
+const COMPACT_WIDTH: f32 = 56.0;
+const COMPACT_THRESHOLD: f32 = 140.0;
+const MIN_EXPANDED_WIDTH: f32 = 170.0;
+const MAX_WIDTH: f32 = 360.0;
+
+#[derive(Clone, Copy)]
+struct ResizeState {
+    compact: bool,
+    pending_save: bool,
+}
+
 pub fn show(
     ctx: &egui::Context,
     settings: &mut Settings,
@@ -11,36 +22,44 @@ pub fn show(
 ) -> Option<String> {
     let colors = crate::shared::ui::theme::colors(ctx);
     let mut error = None;
-    let panel_width = if settings.left_panel_hidden {
-        0.0
-    } else {
-        settings.left_panel_width
-    };
+    let panel_id = egui::Id::new("library-sidebar");
+    let resize_state_id = panel_id.with("mode");
+    let mut resize_state = ctx
+        .data(|data| data.get_temp::<ResizeState>(resize_state_id))
+        .unwrap_or(ResizeState {
+            compact: settings.compact_sidebar,
+            pending_save: false,
+        });
 
-    let compact = settings.compact_sidebar;
-    // Separate panel state preserves the expanded width when toggling compact mode.
-    let panel = if compact {
-        egui::SidePanel::left("library-sidebar-compact")
-            .resizable(false)
-            .exact_width(56.0)
+    // Preference changes reset the width; drag changes retain the same panel and drag handle.
+    if resize_state.compact != settings.compact_sidebar {
+        ctx.data_mut(|data| data.remove::<egui::containers::panel::PanelState>(panel_id));
+        resize_state.compact = settings.compact_sidebar;
+    }
+    let panel_width = if settings.compact_sidebar {
+        COMPACT_WIDTH
     } else {
-        egui::SidePanel::left("library-sidebar")
-            .resizable(true)
-            .default_width(panel_width)
-            .width_range(170.0..=360.0)
+        settings
+            .left_panel_width
+            .clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
     };
-    let output = panel
+    let output = egui::SidePanel::left(panel_id)
+        .resizable(true)
+        .default_width(panel_width)
+        .width_range(COMPACT_WIDTH..=MAX_WIDTH)
         .frame(
             egui::Frame::new()
                 .fill(colors.sidebar)
-                .inner_margin(egui::Margin::symmetric(if compact { 8 } else { 14 }, 10)),
+                .inner_margin(egui::Margin::symmetric(8, 10)),
         )
         .show(ctx, |ui| {
+            let compact = ui.available_width() + 16.0 < COMPACT_THRESHOLD;
             nav_item(
                 ui,
                 "Home",
                 egui_phosphor::regular::HOUSE_SIMPLE,
                 Page::Home,
+                compact,
                 workbench,
                 settings,
                 &mut error,
@@ -50,23 +69,50 @@ pub fn show(
                 "Albums",
                 egui_phosphor::regular::FOLDERS,
                 Page::Albums,
+                compact,
                 workbench,
                 settings,
                 &mut error,
             );
         });
 
-    // Compact mode must not overwrite the preferred expanded width.
-    if !settings.left_panel_hidden && !compact {
+    if !settings.left_panel_hidden {
         let width = output.response.rect.width();
-        let resizing = ctx.input(|input| input.pointer.primary_down());
-        if !resizing && (width - settings.left_panel_width).abs() > 0.5 {
-            settings.left_panel_width = width;
-            if let Err(save_error) = settings.save() {
-                error = Some(format!("Could not save settings: {save_error}"));
+        let compact = width < COMPACT_THRESHOLD;
+        if compact != settings.compact_sidebar {
+            settings.compact_sidebar = compact;
+            resize_state.pending_save = true;
+        }
+        let dragging = ctx.input(|input| input.pointer.primary_down());
+        if !dragging {
+            // Snap to the icon rail on release while preserving the previous expanded width.
+            let settled_width = if compact {
+                COMPACT_WIDTH
+            } else {
+                width.clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
+            };
+            if (settled_width - width).abs() > 0.5 {
+                let mut rect = output.response.rect;
+                rect.max.x = rect.min.x + settled_width;
+                ctx.data_mut(|data| {
+                    data.insert_persisted(panel_id, egui::containers::panel::PanelState { rect })
+                });
+                ctx.request_repaint();
+            }
+            if !compact && (settled_width - settings.left_panel_width).abs() > 0.5 {
+                settings.left_panel_width = settled_width;
+                resize_state.pending_save = true;
+            }
+            if resize_state.pending_save {
+                if let Err(save_error) = settings.save() {
+                    error = Some(format!("Could not save settings: {save_error}"));
+                }
+                resize_state.pending_save = false;
             }
         }
     }
+    resize_state.compact = settings.compact_sidebar;
+    ctx.data_mut(|data| data.insert_temp(resize_state_id, resize_state));
 
     // If album details were closed and panel was hidden, show it again
     if settings.left_panel_hidden && !workbench.show_album_details {
@@ -83,6 +129,7 @@ fn nav_item(
     label: &str,
     icon: &str,
     page: Page,
+    compact: bool,
     workbench: &mut WorkbenchState,
     settings: &mut Settings,
     error: &mut Option<String>,
@@ -106,7 +153,7 @@ fn nav_item(
             label,
         )
     });
-    let icon_center = if settings.compact_sidebar {
+    let icon_center = if compact {
         rect.center()
     } else {
         rect.min + egui::vec2(22.0, rect.height() * 0.5)
@@ -118,7 +165,7 @@ fn nav_item(
         egui::FontId::new(18.0, egui::FontFamily::Name("phosphor".into())),
         icon_tint,
     );
-    let response = if settings.compact_sidebar {
+    let response = if compact {
         response.on_hover_text(label)
     } else {
         ui.painter().text(
