@@ -39,9 +39,13 @@ pub(in crate::workbench) fn show(
             let row_width = ui.available_width();
             let (row_rect, _) =
                 ui.allocate_exact_size(egui::vec2(row_width, 72.0), egui::Sense::hover());
+            let max_info_width = ((row_width - 164.0) * 0.5 - 16.0).max(0.0);
             let info_rect = egui::Rect::from_min_size(
                 row_rect.min,
-                egui::vec2((row_width * 0.32).min(280.0), row_rect.height()),
+                egui::vec2(
+                    (row_width * 0.4).min(440.0).min(max_info_width),
+                    row_rect.height(),
+                ),
             );
             let mut info_ui = ui.new_child(
                 egui::UiBuilder::new()
