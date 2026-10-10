@@ -217,7 +217,14 @@ pub(crate) fn scan(
                         fingerprint,
                     });
                 }
-                _ => {}
+                SmbDirentType::Workgroup
+                | SmbDirentType::Server
+                | SmbDirentType::FileShare
+                | SmbDirentType::PrinterShare
+                | SmbDirentType::CommsShare
+                | SmbDirentType::IpcShare
+                | SmbDirentType::Link
+                | SmbDirentType::File => {}
             }
         }
     }

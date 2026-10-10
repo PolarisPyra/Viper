@@ -42,10 +42,12 @@ pub(in crate::workbench) fn show(
                         .progress
                         .phase
                         .load(std::sync::atomic::Ordering::Relaxed);
-                    let label = match phase {
-                        0 => "Finding audio files…".to_owned(),
-                        1 => format!("Reading track tags · {completed}/{total}"),
-                        _ => format!("Loading album artwork · {completed}/{total}"),
+                    let label = if phase == 0 {
+                        "Finding audio files…".to_owned()
+                    } else if phase == 1 {
+                        format!("Reading track tags · {completed}/{total}")
+                    } else {
+                        format!("Loading album artwork · {completed}/{total}")
                     };
                     let fraction = if total == 0 {
                         0.0

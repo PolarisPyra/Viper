@@ -164,7 +164,7 @@ pub(in crate::workbench) fn show(
             let volume_glyph = match settings.volume {
                 0 => egui_phosphor::regular::SPEAKER_X,
                 1..=35 => egui_phosphor::regular::SPEAKER_LOW,
-                _ => egui_phosphor::regular::SPEAKER_HIGH,
+                36..=u8::MAX => egui_phosphor::regular::SPEAKER_HIGH,
             };
             ui.painter().text(
                 volume_icon.center(),

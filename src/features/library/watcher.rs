@@ -36,6 +36,24 @@ pub enum FileWatcherError {
     Notify(#[from] notify::Error),
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ChangeKind {
+    Upsert,
+    Remove,
+    Modify,
+}
+
+#[derive(Clone, Copy)]
+enum EventChangeKind {
+    Create,
+    Remove,
+    RenameBoth,
+    RenameFrom,
+    RenameTo,
+    RenameAmbiguous,
+    Modify,
+}
+
 impl FileWatcher {
     /// Start recursively watching a local music folder.
     ///
@@ -74,28 +92,46 @@ impl FileWatcher {
             match self.events.try_recv() {
                 Ok(Ok(event)) => {
                     let kind = match event.kind {
-                        EventKind::Create(_) => 0,
-                        EventKind::Remove(_) => 1,
-                        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => 1,
-                        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => 4,
-                        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => 3,
-                        EventKind::Modify(ModifyKind::Name(_)) => 5,
-                        EventKind::Modify(ModifyKind::Any | ModifyKind::Other) => 5,
-                        EventKind::Modify(_) => 2,
-                        _ => continue,
+                        EventKind::Create(_) => EventChangeKind::Create,
+                        EventKind::Remove(_) => EventChangeKind::Remove,
+                        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+                            EventChangeKind::RenameFrom
+                        }
+                        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                            EventChangeKind::RenameBoth
+                        }
+                        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+                            EventChangeKind::RenameTo
+                        }
+                        EventKind::Modify(ModifyKind::Name(
+                            RenameMode::Any | RenameMode::Other,
+                        ))
+                        | EventKind::Modify(ModifyKind::Any | ModifyKind::Other) => {
+                            EventChangeKind::RenameAmbiguous
+                        }
+                        EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Metadata(_)) => {
+                            EventChangeKind::Modify
+                        }
+                        EventKind::Any | EventKind::Access(_) | EventKind::Other => continue,
                     };
                     for (index, path) in event.paths.into_iter().enumerate() {
                         let path_kind = match kind {
-                            4 if index == 0 => 1,
-                            4 => 3,
-                            5 if path.exists() => 3,
-                            5 => 1,
-                            other => other,
+                            EventChangeKind::Create | EventChangeKind::RenameTo => {
+                                ChangeKind::Upsert
+                            }
+                            EventChangeKind::Remove | EventChangeKind::RenameFrom => {
+                                ChangeKind::Remove
+                            }
+                            EventChangeKind::RenameBoth if index == 0 => ChangeKind::Remove,
+                            EventChangeKind::RenameBoth => ChangeKind::Upsert,
+                            EventChangeKind::RenameAmbiguous if path.exists() => ChangeKind::Upsert,
+                            EventChangeKind::RenameAmbiguous => ChangeKind::Remove,
+                            EventChangeKind::Modify => ChangeKind::Modify,
                         };
                         let relevant = match path_kind {
-                            0 | 3 => is_audio_path(&path) || path.is_dir(),
-                            1 => true,
-                            _ => is_audio_path(&path),
+                            ChangeKind::Upsert => is_audio_path(&path) || path.is_dir(),
+                            ChangeKind::Remove => true,
+                            ChangeKind::Modify => is_audio_path(&path),
                         };
                         if relevant {
                             changed.insert((path_kind, path));
@@ -108,12 +144,10 @@ impl FileWatcher {
         }
         Ok(changed
             .into_iter()
-            .map(|(kind, path)| {
-                if kind == 1 {
-                    FileChange::Remove(path)
-                } else {
-                    FileChange::Upsert(path)
-                }
+            .map(|(kind, path)| match kind {
+                ChangeKind::Upsert => FileChange::Upsert(path),
+                ChangeKind::Remove => FileChange::Remove(path),
+                ChangeKind::Modify => FileChange::Upsert(path),
             })
             .collect())
     }

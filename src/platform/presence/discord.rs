@@ -128,7 +128,7 @@ impl DiscordPresence {
                 self.published = Some(key);
                 self.refresh_after = Instant::now() + Duration::from_secs(60);
             }
-            _ => {
+            Some(Err(_)) | None => {
                 self.disconnect();
                 self.retry_after = Instant::now() + Duration::from_secs(10);
             }

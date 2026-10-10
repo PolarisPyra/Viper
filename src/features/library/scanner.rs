@@ -105,7 +105,7 @@ pub(crate) fn scan_library_with_auth(
                 skipped_empty_files.push(path.clone());
                 false
             }
-            _ => true,
+            Ok(_) | Err(_) => true,
         });
     }
     if cancel.load(Ordering::Relaxed) {
