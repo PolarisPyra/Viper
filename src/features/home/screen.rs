@@ -33,6 +33,25 @@ impl HomeView<'_> {
     }
 }
 
+fn home_action_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let button = egui::Button::new(
+        egui::RichText::new(label)
+            .size(12.0)
+            .strong()
+            .color(colors.text),
+    )
+    .fill(colors.surface)
+    .stroke(egui::Stroke::new(1.0_f32, colors.border))
+    .corner_radius(7.0)
+    .min_size(egui::vec2(0.0, 34.0));
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::vec2(12.0, 7.0);
+        ui.add(button)
+    })
+    .inner
+}
+
 pub(crate) fn show(
     ctx: &egui::Context,
     workbench: &mut WorkbenchState,
@@ -164,7 +183,7 @@ pub(crate) fn show(
                             .color(colors.muted),
                         );
                         ui.add_space(10.0);
-                        if ui.small_button("Browse albums").clicked() {
+                        if home_action_button(ui, "Browse albums").clicked() {
                             view.workbench.page = Page::Albums;
                         }
                     } else {
@@ -282,7 +301,7 @@ fn empty_state(
                     .color(colors.muted),
             );
             ui.add_space(12.0);
-            if ui.button(action).clicked() {
+            if home_action_button(ui, action).clicked() {
                 on_click(view);
             }
         });
@@ -350,7 +369,7 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                         } else {
                             "Pause"
                         };
-                        if ui.button(label).clicked() {
+                        if home_action_button(ui, label).clicked() {
                             view.playback.toggle_pause();
                         }
                     });
@@ -363,7 +382,7 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                 .color(colors.muted),
         );
         ui.add_space(8.0);
-        if ui.small_button("Browse albums").clicked() {
+        if home_action_button(ui, "Browse albums").clicked() {
             view.workbench.page = Page::Albums;
         }
     }
