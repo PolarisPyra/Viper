@@ -28,6 +28,7 @@ pub(super) fn definition(theme: catppuccin_egui::Theme) -> ThemeDefinition {
             muted: theme.subtext0,
             subtle: theme.overlay1,
             accent: theme.mauve,
+            secondary: theme.blue,
             on_accent: theme.base,
             warning: theme.yellow,
             danger: theme.red,

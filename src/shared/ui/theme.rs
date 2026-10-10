@@ -11,14 +11,20 @@ pub enum ThemeId {
     CatppuccinMacchiato,
     #[default]
     CatppuccinMocha,
+    RosePine,
+    RosePineMoon,
+    RosePineDawn,
 }
 
 impl ThemeId {
-    pub(crate) const ALL: [Self; 4] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::CatppuccinLatte,
         Self::CatppuccinFrappe,
         Self::CatppuccinMacchiato,
         Self::CatppuccinMocha,
+        Self::RosePine,
+        Self::RosePineMoon,
+        Self::RosePineDawn,
     ];
 
     pub(crate) fn label(self) -> &'static str {
@@ -27,6 +33,9 @@ impl ThemeId {
             Self::CatppuccinFrappe => "Catppuccin Frappé",
             Self::CatppuccinMacchiato => "Catppuccin Macchiato",
             Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::RosePine => "Rosé Pine",
+            Self::RosePineMoon => "Rosé Pine Moon",
+            Self::RosePineDawn => "Rosé Pine Dawn",
         }
     }
 
@@ -36,11 +45,15 @@ impl ThemeId {
             Self::CatppuccinFrappe => catppuccin::definition(catppuccin_egui::FRAPPE),
             Self::CatppuccinMacchiato => catppuccin::definition(catppuccin_egui::MACCHIATO),
             Self::CatppuccinMocha => catppuccin::definition(catppuccin_egui::MOCHA),
+            Self::RosePine => rose_pine::definition(rose_pine::Variant::Main),
+            Self::RosePineMoon => rose_pine::definition(rose_pine::Variant::Moon),
+            Self::RosePineDawn => rose_pine::definition(rose_pine::Variant::Dawn),
         }
     }
 }
 
 mod catppuccin;
+mod rose_pine;
 
 /// Each provider supplies native egui visuals and custom-paint semantic colors.
 struct ThemeDefinition {
@@ -68,6 +81,7 @@ pub(crate) struct Palette {
     pub muted: egui::Color32,
     pub subtle: egui::Color32,
     pub accent: egui::Color32,
+    pub secondary: egui::Color32,
     pub on_accent: egui::Color32,
     pub warning: egui::Color32,
     pub danger: egui::Color32,
@@ -95,7 +109,7 @@ pub(crate) fn apply(ctx: &egui::Context, theme: ThemeId) {
     } = theme.definition();
     visuals.selection.bg_fill = palette.selected;
     visuals.selection.stroke = egui::Stroke::new(1.0_f32, palette.text);
-    visuals.hyperlink_color = palette.accent;
+    visuals.hyperlink_color = palette.secondary;
     visuals.warn_fg_color = palette.warning;
     visuals.error_fg_color = palette.danger;
     ctx.set_visuals(visuals);
