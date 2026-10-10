@@ -236,10 +236,17 @@ impl ViperApp {
         let Some(track_index) = self.playback.current else {
             return;
         };
-        let Some(album_index) = self.library.model.track_album.get(track_index).copied() else {
+        let Some(album_index) = self
+            .library
+            .model
+            .track_album
+            .get(track_index)
+            .copied()
+            .flatten()
+        else {
             return;
         };
-        let Some(album) = self.library.model.albums.get(album_index) else {
+        let Some(album) = self.library.model.albums.get(album_index.get()) else {
             return;
         };
         let key = crate::features::library::sorting::album_sort_key(&album.artist, &album.title);

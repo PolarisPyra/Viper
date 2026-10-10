@@ -297,7 +297,14 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
         };
         let title = track.title.clone();
         let artist = track.artist.clone();
-        let album_index = view.library.model.track_album.get(track_index).copied();
+        let album_index = view
+            .library
+            .model
+            .track_album
+            .get(track_index)
+            .copied()
+            .flatten()
+            .map(crate::features::library::AlbumIndex::get);
         let album_name = album_index
             .and_then(|index| view.library.model.albums.get(index))
             .map(|album| album.title.clone())

@@ -5,6 +5,22 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
+/// An index into [`Library::albums`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AlbumIndex(usize);
+
+impl AlbumIndex {
+    /// Create an album index from its position in a library.
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Return the numeric position used to access an album slice.
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// Tagged metadata and playback properties for one audio track.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Track {
@@ -67,8 +83,8 @@ pub struct Library {
     pub tracks: Vec<Track>,
     /// Albums grouped from tracks with album metadata.
     pub albums: Vec<Album>,
-    /// For each track, its album index or `usize::MAX` when it has no album.
-    pub track_album: Vec<usize>,
+    /// For each track, its album index, or `None` when it has no album.
+    pub track_album: Vec<Option<AlbumIndex>>,
     /// Number of directories that could not be scanned.
     pub unreadable_directories: usize,
     pub(crate) scan_error: Option<String>,

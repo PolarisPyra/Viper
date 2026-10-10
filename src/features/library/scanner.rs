@@ -286,7 +286,7 @@ pub(crate) fn scan_library_with_auth(
     }
 
     let mut albums = Vec::with_capacity(groups.len());
-    let mut track_album = vec![usize::MAX; tracks.len()];
+    let mut track_album = vec![None; tracks.len()];
     progress.total.fetch_add(groups.len(), Ordering::Relaxed);
     progress.phase.store(2, Ordering::Relaxed);
     for (_, mut album_tracks) in groups {
@@ -323,7 +323,7 @@ pub(crate) fn scan_library_with_auth(
         let art = cover_for_track(&tracks[album_tracks[0]]).map(Arc::from);
         let album_index = albums.len();
         for track_index in &album_tracks {
-            track_album[*track_index] = album_index;
+            track_album[*track_index] = Some(super::model::AlbumIndex::new(album_index));
         }
         albums.push(Album {
             title,

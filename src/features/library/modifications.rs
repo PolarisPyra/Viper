@@ -37,7 +37,7 @@ pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTrac
         library.tracks.push(track);
         added_count += 1;
         let Some(key) = key else {
-            library.track_album.push(usize::MAX);
+            library.track_album.push(None);
             continue;
         };
         let art = discovered.album_art.get(&key).cloned();
@@ -59,7 +59,9 @@ pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTrac
             album_indices.insert(key, index);
             index
         };
-        library.track_album.push(album_index);
+        library
+            .track_album
+            .push(Some(super::model::AlbumIndex::new(album_index)));
         updated_albums.insert(album_index);
     }
     for album_index in updated_albums {

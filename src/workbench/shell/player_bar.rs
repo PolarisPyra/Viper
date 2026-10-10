@@ -315,7 +315,13 @@ fn show_track_info(
 ) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     if let Some(index) = current {
-        let album_index = library.model.track_album.get(index).copied();
+        let album_index = library
+            .model
+            .track_album
+            .get(index)
+            .copied()
+            .flatten()
+            .map(crate::features::library::AlbumIndex::get);
         let texture = album_index.and_then(|album_index| {
             let bytes = library.model.albums.get(album_index)?.art.as_deref()?;
             artwork_cache.texture(ctx, album_index, bytes)
