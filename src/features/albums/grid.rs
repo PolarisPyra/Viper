@@ -60,6 +60,7 @@ fn show_album_card(
     art_size: f32,
     card_height: f32,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     if screen.library.model.albums.get(index).is_none() {
         return;
     }
@@ -72,7 +73,7 @@ fn show_album_card(
         |ui| {
             egui::Frame::new()
                 .fill(if selected {
-                    egui::Color32::from_rgb(38, 39, 51)
+                    colors.selected
                 } else {
                     egui::Color32::TRANSPARENT
                 })
@@ -89,7 +90,7 @@ fn show_album_card(
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&album.title)
-                                .color(egui::Color32::WHITE)
+                                .color(colors.text)
                                 .size(14.0),
                         )
                         .truncate(),
@@ -101,7 +102,7 @@ fn show_album_card(
                                 album.artist,
                                 album.tracks.len()
                             ))
-                            .color(egui::Color32::from_gray(145))
+                            .color(colors.muted)
                             .size(12.0),
                         )
                         .truncate(),
@@ -115,11 +116,12 @@ fn show_album_card(
 }
 
 pub(super) fn show_skeleton_albums(ctx: &egui::Context, ui: &mut egui::Ui, width: f32) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let (columns, card_width, art_size, gap, left) = grid_metrics(width);
     let card_height = art_size + 81.0;
     let pulse = ((ctx.input(|input| input.time) * 2.2).sin() * 0.5 + 0.5) as f32;
-    let cover_color = egui::Color32::from_gray((34.0 + pulse * 12.0) as u8);
-    let line_color = egui::Color32::from_gray((43.0 + pulse * 10.0) as u8);
+    let cover_color = colors.surface.lerp_to_gamma(colors.hover, pulse);
+    let line_color = colors.hover.lerp_to_gamma(colors.border, pulse);
     ui.add_space(16.0);
     for _ in 0..3 {
         ui.horizontal(|ui| {

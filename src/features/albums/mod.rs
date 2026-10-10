@@ -13,8 +13,6 @@ use eframe::egui;
 mod grid;
 mod list;
 
-const CANVAS: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
-
 pub(crate) struct AlbumScreen<'a> {
     pub(crate) workbench: &'a mut WorkbenchState,
     pub(crate) library: &'a mut LibraryFeature,
@@ -36,6 +34,7 @@ impl AlbumScreen<'_> {
 }
 
 pub(crate) fn show(ctx: &egui::Context, mut screen: AlbumScreen<'_>) {
+    let colors = crate::shared::ui::theme::colors(ctx);
     crate::features::albums::toolbar::show(
         ctx,
         screen.settings,
@@ -56,7 +55,7 @@ pub(crate) fn show(ctx: &egui::Context, mut screen: AlbumScreen<'_>) {
         ),
     );
     egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(CANVAS).inner_margin(0))
+        .frame(egui::Frame::new().fill(colors.canvas).inner_margin(0))
         .show(ctx, |ui| show_grid(ctx, ui, &mut screen, &albums, page));
 }
 
@@ -105,6 +104,7 @@ fn show_grid(
 }
 
 fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, width: f32) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     if screen.library.scanning
         && screen.library.model.albums.is_empty()
         && screen.library.view.search.trim().is_empty()
@@ -124,11 +124,7 @@ fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, 
         "No albums match your search"
     };
     ui.centered_and_justified(|ui| {
-        ui.label(
-            egui::RichText::new(message)
-                .size(18.0)
-                .color(egui::Color32::from_gray(120)),
-        )
+        ui.label(egui::RichText::new(message).size(18.0).color(colors.subtle))
     });
 }
 

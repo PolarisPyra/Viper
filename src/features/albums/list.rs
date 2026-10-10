@@ -3,6 +3,7 @@ use eframe::egui;
 use super::{open_album, paint_cover, AlbumScreen};
 
 pub(super) fn show_header(ui: &mut egui::Ui, width: f32) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     const HEADER_HEIGHT: f32 = 32.0;
     let header = ui
         .allocate_exact_size(egui::vec2(width, HEADER_HEIGHT), egui::Sense::hover())
@@ -21,12 +22,12 @@ pub(super) fn show_header(ui: &mut egui::Ui, width: f32) {
             egui::Align2::LEFT_CENTER,
             label,
             egui::FontId::proportional(13.0),
-            egui::Color32::from_gray(205),
+            colors.muted,
         );
     }
     ui.painter().line_segment(
         [header.left_bottom(), header.right_bottom()],
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(37, 40, 49)),
+        egui::Stroke::new(1.0_f32, colors.border),
     );
 }
 
@@ -38,6 +39,7 @@ pub(super) fn show_album_list(
     viewport: egui::Rect,
     width: f32,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     const ROW_HEIGHT: f32 = 72.0;
     const ROW_GAP: f32 = 1.0;
     let row_step = ROW_HEIGHT + ROW_GAP;
@@ -65,9 +67,9 @@ pub(super) fn show_album_list(
                 rect.shrink2(egui::vec2(0.0, 2.0)),
                 0.0,
                 if selected {
-                    egui::Color32::from_rgb(38, 39, 51)
+                    colors.selected
                 } else {
-                    egui::Color32::from_rgb(28, 31, 41)
+                    colors.hover
                 },
             );
         }
@@ -98,24 +100,9 @@ pub(super) fn show_album_list(
             .map_or_else(|| "—".to_owned(), |year| year.to_string());
 
         for (x, column_width, text, color) in [
-            (
-                title_x,
-                title_width,
-                album.title.as_str(),
-                egui::Color32::from_gray(225),
-            ),
-            (
-                artist_x,
-                artist_width,
-                album.artist.as_str(),
-                egui::Color32::from_gray(190),
-            ),
-            (
-                date_x,
-                date_width,
-                year.as_str(),
-                egui::Color32::from_gray(190),
-            ),
+            (title_x, title_width, album.title.as_str(), colors.text),
+            (artist_x, artist_width, album.artist.as_str(), colors.muted),
+            (date_x, date_width, year.as_str(), colors.muted),
         ] {
             let column_rect = egui::Rect::from_min_size(
                 egui::pos2(x, rect.top()),
@@ -131,7 +118,7 @@ pub(super) fn show_album_list(
         }
         ui.painter().line_segment(
             [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(37, 40, 49)),
+            egui::Stroke::new(1.0_f32, colors.border),
         );
         if response.clicked() {
             open_album(ctx, screen, album_index);
@@ -140,9 +127,10 @@ pub(super) fn show_album_list(
 }
 
 pub(super) fn show_skeleton_list(ctx: &egui::Context, ui: &mut egui::Ui) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let pulse = ((ctx.input(|input| input.time) * 2.2).sin() * 0.5 + 0.5) as f32;
-    let cover_color = egui::Color32::from_gray((34.0 + pulse * 12.0) as u8);
-    let line_color = egui::Color32::from_gray((43.0 + pulse * 10.0) as u8);
+    let cover_color = colors.surface.lerp_to_gamma(colors.hover, pulse);
+    let line_color = colors.hover.lerp_to_gamma(colors.border, pulse);
     for _ in 0..6 {
         let (row, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 72.0), egui::Sense::hover());

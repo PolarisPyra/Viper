@@ -4,11 +4,6 @@ pub(crate) use state::PreferencesState;
 use crate::{platform::persistence::settings::Settings, workbench::WorkbenchState};
 use eframe::egui;
 
-const PANEL: egui::Color32 = egui::Color32::from_rgb(22, 25, 34);
-const PANEL_BORDER: egui::Color32 = egui::Color32::from_rgb(51, 57, 72);
-const TEXT: egui::Color32 = egui::Color32::from_rgb(232, 235, 244);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(148, 155, 173);
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PreferencesAction {
     ChooseMusicFolder,
@@ -23,6 +18,7 @@ pub(crate) fn show(
     settings: &mut Settings,
     error: &mut Option<String>,
 ) -> Option<PreferencesAction> {
+    let colors = crate::shared::ui::theme::colors(ctx);
     if !workbench.show_preferences {
         return None;
     }
@@ -40,12 +36,12 @@ pub(crate) fn show(
     let response = egui::Modal::new(egui::Id::new("preferences-modal"))
         .frame(
             egui::Frame::new()
-                .fill(PANEL)
-                .stroke(egui::Stroke::new(1.0_f32, PANEL_BORDER))
+                .fill(colors.panel)
+                .stroke(egui::Stroke::new(1.0_f32, colors.border))
                 .corner_radius(14.0)
                 .inner_margin(egui::Margin::symmetric(18, 18)),
         )
-        .backdrop_color(egui::Color32::from_black_alpha(165))
+        .backdrop_color(colors.backdrop)
         .show(ctx, |ui| {
             ui.set_min_size(content_size);
             ui.set_max_size(content_size);
@@ -56,14 +52,14 @@ pub(crate) fn show(
                         egui::RichText::new("Preferences")
                             .size(23.0)
                             .strong()
-                            .color(TEXT),
+                            .color(colors.text),
                     );
                     ui.label(
                         egui::RichText::new(
                             "Manage your library, connections, and startup experience",
                         )
                         .size(12.0)
-                        .color(MUTED),
+                        .color(colors.muted),
                     );
                 });
 
@@ -71,15 +67,18 @@ pub(crate) fn show(
                     let (rect, response) =
                         ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click());
                     if response.hovered() {
-                        ui.painter()
-                            .rect_filled(rect, 8.0, egui::Color32::from_rgb(47, 52, 67));
+                        ui.painter().rect_filled(rect, 8.0, colors.hover);
                     }
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         egui_phosphor::regular::X,
                         egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
-                        if response.hovered() { TEXT } else { MUTED },
+                        if response.hovered() {
+                            colors.text
+                        } else {
+                            colors.muted
+                        },
                     );
                     if response.on_hover_text("Close preferences").clicked() {
                         close_requested = true;
@@ -103,11 +102,9 @@ pub(crate) fn show(
                         Category::Connections => {
                             show_connections(ui, preferences, settings, error, &mut action)
                         }
-                        Category::Audio
-                        | Category::Theme
-                        | Category::View
-                        | Category::Services
-                        | Category::About => {}
+                        Category::View => show_view(ui, settings, &mut action),
+                        Category::Theme => show_theme(ui, settings, &mut action),
+                        Category::Audio | Category::Services | Category::About => {}
                     }
                 });
         });
@@ -119,6 +116,7 @@ pub(crate) fn show(
 }
 
 fn category_tabs(ui: &mut egui::Ui, preferences: &mut PreferencesState) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let mut selected = preferences.category.unwrap_or(Category::General);
     egui::ScrollArea::horizontal()
         .id_salt("preferences-category-tabs")
@@ -133,16 +131,20 @@ fn category_tabs(ui: &mut egui::Ui, preferences: &mut PreferencesState) {
                             let widgets = &mut ui.visuals_mut().widgets;
                             widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
                             widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                            widgets.hovered.bg_fill = egui::Color32::from_rgb(37, 40, 53);
+                            widgets.hovered.bg_fill = colors.surface;
                             widgets.hovered.bg_stroke = egui::Stroke::NONE;
-                            widgets.active.bg_fill = egui::Color32::from_rgb(37, 40, 53);
+                            widgets.active.bg_fill = colors.surface;
                             widgets.active.bg_stroke = egui::Stroke::NONE;
                             ui.spacing_mut().button_padding = egui::vec2(11.0, 7.0);
                             ui.selectable_label(
                                 is_selected,
-                                egui::RichText::new(category.label())
-                                    .size(12.0)
-                                    .color(if is_selected { TEXT } else { MUTED }),
+                                egui::RichText::new(category.label()).size(12.0).color(
+                                    if is_selected {
+                                        colors.text
+                                    } else {
+                                        colors.muted
+                                    },
+                                ),
                             )
                         })
                         .inner;
@@ -190,17 +192,13 @@ impl Category {
     }
 }
 
-const BUTTON: egui::Color32 = egui::Color32::from_rgb(37, 40, 53);
-const BORDER: egui::Color32 = egui::Color32::from_rgb(67, 72, 91);
-const ROW_HOVERED: egui::Color32 = egui::Color32::from_rgb(32, 36, 47);
-const ROW_SELECTED: egui::Color32 = egui::Color32::from_rgb(34, 38, 49);
-
 fn show_general(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     error: &mut Option<String>,
     action: &mut Option<PreferencesAction>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.set_min_width(420.0);
     ui.add_space(8.0);
     section_title(ui, "Music library");
@@ -230,10 +228,10 @@ fn show_general(
                 egui::RichText::new("Choose folder")
                     .size(12.0)
                     .strong()
-                    .color(egui::Color32::WHITE),
+                    .color(colors.text),
             )
-            .fill(BUTTON)
-            .stroke(egui::Stroke::new(1.0_f32, BORDER))
+            .fill(colors.surface)
+            .stroke(egui::Stroke::new(1.0_f32, colors.border))
             .corner_radius(7.0)
             .min_size(egui::vec2(112.0, 34.0));
             if ui.add(button).clicked() {
@@ -261,60 +259,7 @@ fn show_general(
                 "Albums",
             ),
         ] {
-            let is_startup = new_startup_view == page;
-            let (rect, response) = ui
-                .allocate_exact_size(egui::vec2(ui.available_width(), 44.0), egui::Sense::click());
-            let fill = if response.hovered() {
-                ROW_HOVERED
-            } else if is_startup {
-                ROW_SELECTED
-            } else {
-                BUTTON
-            };
-            ui.painter().rect(
-                rect,
-                7.0,
-                fill,
-                egui::Stroke::new(1.0_f32, BORDER),
-                egui::StrokeKind::Inside,
-            );
-
-            let icon_rect = egui::Rect::from_center_size(
-                egui::pos2(rect.left() + 18.0, rect.center().y),
-                egui::vec2(16.0, 16.0),
-            );
-            ui.painter().text(
-                icon_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                if is_startup {
-                    egui_phosphor::regular::RADIO_BUTTON
-                } else {
-                    egui_phosphor::regular::CIRCLE
-                },
-                egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
-                if is_startup {
-                    egui::Color32::from_gray(220)
-                } else {
-                    egui::Color32::from_gray(130)
-                },
-            );
-            ui.painter().text(
-                egui::pos2(rect.left() + 36.0, rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                label,
-                egui::FontId::proportional(13.0),
-                egui::Color32::from_gray(if is_startup { 235 } else { 195 }),
-            );
-            if is_startup {
-                ui.painter().text(
-                    egui::pos2(rect.right() - 12.0, rect.center().y),
-                    egui::Align2::RIGHT_CENTER,
-                    "Current startup page",
-                    egui::FontId::proportional(11.0),
-                    egui::Color32::from_gray(145),
-                );
-            }
-            if response.clicked() {
+            if choice_row(ui, label, new_startup_view == page, "Current startup page").clicked() {
                 new_startup_view = page;
             }
         }
@@ -327,6 +272,113 @@ fn show_general(
     }
 }
 
+fn show_theme(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<PreferencesAction>) {
+    ui.add_space(8.0);
+    section_title(ui, "Themes");
+    ui.label("Choose a theme for the player.");
+    ui.add_space(12.0);
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        for theme in crate::shared::ui::theme::ThemeId::ALL {
+            if choice_row(ui, theme.label(), settings.theme == theme, "Current theme").clicked()
+                && settings.theme != theme
+            {
+                settings.theme = theme;
+                crate::shared::ui::theme::apply(ui.ctx(), theme);
+                *action = Some(PreferencesAction::SaveSettings);
+            }
+        }
+    });
+}
+
+fn choice_row(ui: &mut egui::Ui, label: &str, selected: bool, status: &str) -> egui::Response {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::RadioButton,
+            ui.is_enabled(),
+            selected,
+            label,
+        )
+    });
+    let fill = if response.hovered() {
+        colors.hover
+    } else if selected {
+        colors.selected
+    } else {
+        colors.surface
+    };
+    ui.painter().rect(
+        rect,
+        7.0,
+        fill,
+        egui::Stroke::new(1.0_f32, colors.border),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        egui::pos2(rect.left() + 18.0, rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        if selected {
+            egui_phosphor::regular::RADIO_BUTTON
+        } else {
+            egui_phosphor::regular::CIRCLE
+        },
+        egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
+        if selected {
+            colors.accent
+        } else {
+            colors.subtle
+        },
+    );
+    // Reserve status space only when there is room; long names are clipped to the row.
+    let show_status = selected && rect.width() >= 390.0;
+    let label_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 36.0, rect.top()),
+        egui::pos2(
+            rect.right() - if show_status { 150.0 } else { 12.0 },
+            rect.bottom(),
+        ),
+    );
+    ui.painter().with_clip_rect(label_rect).text(
+        egui::pos2(label_rect.left(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(13.0),
+        colors.text,
+    );
+    if show_status {
+        ui.painter().text(
+            egui::pos2(rect.right() - 12.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            status,
+            egui::FontId::proportional(11.0),
+            colors.muted,
+        );
+    }
+    response
+}
+
+fn show_view(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<PreferencesAction>) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    ui.add_space(8.0);
+    section_title(ui, "Sidebar");
+    if ui
+        .checkbox(&mut settings.compact_sidebar, "Compact sidebar")
+        .changed()
+    {
+        *action = Some(PreferencesAction::SaveSettings);
+    }
+    ui.label(
+        egui::RichText::new(
+            "Show only icons in a narrow sidebar. Hover over an icon to see its name.",
+        )
+        .size(12.0)
+        .color(colors.muted),
+    );
+}
+
 fn show_connections(
     ui: &mut egui::Ui,
     preferences: &mut PreferencesState,
@@ -334,6 +386,7 @@ fn show_connections(
     _error: &mut Option<String>,
     action: &mut Option<PreferencesAction>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.set_min_width(420.0);
     ui.add_space(8.0);
     #[cfg(target_os = "linux")]
@@ -390,7 +443,7 @@ fn show_connections(
     ui.label(
         egui::RichText::new("Create an application in the Discord Developer Portal and copy its Application ID here.")
             .size(11.0)
-            .color(MUTED),
+            .color(colors.muted),
     );
     ui.add_space(12.0);
     ui.allocate_ui_with_layout(
@@ -410,24 +463,25 @@ fn show_connections(
 }
 
 fn left_action_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let font = egui::FontId::proportional(12.0);
     let galley = ui
         .painter()
-        .layout_no_wrap(label.to_owned(), font.clone(), TEXT);
+        .layout_no_wrap(label.to_owned(), font.clone(), colors.text);
     let size = egui::vec2(galley.size().x + 24.0, 34.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let fill = if response.is_pointer_button_down_on() {
-        ROW_SELECTED
+        colors.selected
     } else if response.hovered() {
-        ROW_HOVERED
+        colors.hover
     } else {
-        BUTTON
+        colors.surface
     };
     ui.painter().rect(
         rect,
         7.0,
         fill,
-        egui::Stroke::new(1.0_f32, BORDER),
+        egui::Stroke::new(1.0_f32, colors.border),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -435,7 +489,7 @@ fn left_action_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
         egui::Align2::LEFT_CENTER,
         label,
         font,
-        TEXT,
+        colors.text,
     );
     response
 }
@@ -446,20 +500,20 @@ fn connection_text_edit(
     hint: &str,
     password: bool,
 ) -> egui::Response {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.scope(|ui| {
-        let input_fill = egui::Color32::from_rgb(17, 20, 28);
-        let input_border = egui::Color32::from_rgb(51, 57, 72);
+        let input_fill = colors.input;
+        let input_border = colors.border;
         let visuals = &mut ui.visuals_mut().widgets;
         visuals.inactive.bg_fill = input_fill;
         visuals.inactive.bg_stroke = egui::Stroke::new(1.0_f32, input_border);
-        visuals.hovered.bg_fill = egui::Color32::from_rgb(21, 24, 33);
-        visuals.hovered.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
+        visuals.hovered.bg_fill = colors.surface;
+        visuals.hovered.bg_stroke = egui::Stroke::new(1.0_f32, colors.border);
         visuals.active.bg_fill = input_fill;
-        visuals.active.bg_stroke =
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(112, 119, 145));
+        visuals.active.bg_stroke = egui::Stroke::new(1.0_f32, colors.accent);
         let mut edit = egui::TextEdit::singleline(value)
-            .hint_text(egui::RichText::new(hint).color(MUTED))
-            .text_color(TEXT)
+            .hint_text(egui::RichText::new(hint).color(colors.muted))
+            .text_color(colors.text)
             .background_color(input_fill)
             .margin(egui::vec2(8.0, 6.0))
             .desired_width(ui.available_width());

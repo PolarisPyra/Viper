@@ -15,18 +15,19 @@ pub fn show(
     library: &LibraryFeature,
     playback: &mut Playback,
 ) -> Option<MenuBarAction> {
+    let colors = crate::shared::ui::theme::colors(ctx);
     let mut action = None;
     let original_style = ctx.style().as_ref().clone();
     let mut menu_style = original_style.clone();
     menu_style.spacing.menu_spacing = 6.0;
-    style_menu_visuals(&mut menu_style.visuals);
+    style_menu_visuals(&mut menu_style.visuals, colors);
     ctx.set_style(menu_style);
 
     egui::TopBottomPanel::top("app-menu-bar")
         .exact_height(34.0)
         .frame(
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(16, 18, 23))
+                .fill(colors.canvas)
                 .inner_margin(egui::Margin {
                     left: 8,
                     right: 18,
@@ -46,7 +47,7 @@ pub fn show(
                                 18.0,
                                 egui::FontFamily::Name("phosphor".into()),
                             ))
-                            .color(egui::Color32::from_rgb(190, 196, 211)),
+                            .color(colors.muted),
                     );
                     ui.add_space(4.0);
                     ui.scope(|ui| {
@@ -58,15 +59,15 @@ pub fn show(
                         visuals.inactive.bg_fill = egui::Color32::TRANSPARENT;
                         visuals.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
                         visuals.inactive.bg_stroke = egui::Stroke::NONE;
-                        visuals.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-                        visuals.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+                        visuals.hovered.bg_fill = colors.hover;
+                        visuals.hovered.weak_bg_fill = colors.hover;
                         visuals.hovered.bg_stroke = egui::Stroke::NONE;
                         visuals.hovered.corner_radius = egui::CornerRadius::same(5);
-                        visuals.active.bg_fill = egui::Color32::from_rgb(42, 46, 59);
-                        visuals.active.weak_bg_fill = egui::Color32::from_rgb(42, 46, 59);
+                        visuals.active.bg_fill = colors.selected;
+                        visuals.active.weak_bg_fill = colors.selected;
                         visuals.active.bg_stroke = egui::Stroke::NONE;
-                        visuals.open.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-                        visuals.open.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+                        visuals.open.bg_fill = colors.hover;
+                        visuals.open.weak_bg_fill = colors.hover;
                         visuals.open.bg_stroke = egui::Stroke::NONE;
                         visuals.open.corner_radius = egui::CornerRadius::same(5);
                         visuals.inactive.corner_radius = egui::CornerRadius::same(5);
@@ -74,9 +75,7 @@ pub fn show(
                         ui.spacing_mut().button_padding = egui::vec2(8.0, 2.0);
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.menu_button(
-                            egui::RichText::new("File")
-                                .size(12.0)
-                                .color(egui::Color32::from_rgb(190, 196, 211)),
+                            egui::RichText::new("File").size(12.0).color(colors.muted),
                             |ui| {
                                 style_menu_popup(ui);
                                 if menu_item(ui, "Preferences").clicked() {
@@ -93,7 +92,7 @@ pub fn show(
                         ui.menu_button(
                             egui::RichText::new("Library")
                                 .size(12.0)
-                                .color(egui::Color32::from_rgb(190, 196, 211)),
+                                .color(colors.muted),
                             |ui| {
                                 style_menu_popup(ui);
                                 ui.menu_button("Add Library", |ui| {
@@ -108,7 +107,7 @@ pub fn show(
                         ui.menu_button(
                             egui::RichText::new("Playback")
                                 .size(12.0)
-                                .color(egui::Color32::from_rgb(190, 196, 211)),
+                                .color(colors.muted),
                             |ui| {
                                 style_menu_popup(ui);
                                 let has_current_track = playback.current.is_some();
@@ -126,8 +125,7 @@ pub fn show(
                                         can_play,
                                         egui::SelectableLabel::new(
                                             false,
-                                            egui::RichText::new(play_label)
-                                                .color(egui::Color32::WHITE),
+                                            egui::RichText::new(play_label).color(colors.text),
                                         ),
                                     )
                                     .clicked()
@@ -148,7 +146,7 @@ pub fn show(
                                         egui::SelectableLabel::new(
                                             false,
                                             egui::RichText::new("Previous Track")
-                                                .color(egui::Color32::WHITE),
+                                                .color(colors.text),
                                         ),
                                     )
                                     .clicked()
@@ -161,8 +159,7 @@ pub fn show(
                                         has_current_track,
                                         egui::SelectableLabel::new(
                                             false,
-                                            egui::RichText::new("Next Track")
-                                                .color(egui::Color32::WHITE),
+                                            egui::RichText::new("Next Track").color(colors.text),
                                         ),
                                     )
                                     .clicked()
@@ -175,7 +172,7 @@ pub fn show(
                                         has_current_track,
                                         egui::SelectableLabel::new(
                                             false,
-                                            egui::RichText::new("Stop").color(egui::Color32::WHITE),
+                                            egui::RichText::new("Stop").color(colors.text),
                                         ),
                                     )
                                     .clicked()
@@ -186,9 +183,7 @@ pub fn show(
                             },
                         );
                         ui.menu_button(
-                            egui::RichText::new("View")
-                                .size(12.0)
-                                .color(egui::Color32::from_rgb(190, 196, 211)),
+                            egui::RichText::new("View").size(12.0).color(colors.muted),
                             |ui| {
                                 style_menu_popup(ui);
                                 if ui
@@ -217,6 +212,7 @@ pub fn show(
 }
 
 fn style_menu_popup(ui: &mut egui::Ui) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     crate::shared::ui::theme::style_dropdown(ui);
     ui.set_min_width(220.0);
     ui.spacing_mut().menu_margin = egui::Margin::same(8);
@@ -227,26 +223,26 @@ fn style_menu_popup(ui: &mut egui::Ui) {
     widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
     widgets.inactive.bg_stroke = egui::Stroke::NONE;
     // Match the album sort popup's native hovered row visuals.
-    widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    widgets.active.bg_fill = egui::Color32::from_rgb(42, 46, 59);
-    widgets.active.weak_bg_fill = egui::Color32::from_rgb(42, 46, 59);
+    widgets.hovered.bg_fill = colors.hover;
+    widgets.hovered.weak_bg_fill = colors.hover;
+    widgets.active.bg_fill = colors.selected;
+    widgets.active.weak_bg_fill = colors.selected;
     widgets.active.bg_stroke = egui::Stroke::NONE;
-    widgets.open.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    widgets.open.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    widgets.open.bg_fill = colors.hover;
+    widgets.open.weak_bg_fill = colors.hover;
     widgets.open.bg_stroke = egui::Stroke::NONE;
 }
 
-fn style_menu_visuals(visuals: &mut egui::Visuals) {
-    let fill = egui::Color32::from_rgb(27, 31, 41);
-    let selected = egui::Color32::from_rgb(48, 52, 68);
-    let border = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61));
+fn style_menu_visuals(visuals: &mut egui::Visuals, colors: crate::shared::ui::theme::Palette) {
+    let fill = colors.panel;
+    let selected = colors.selected;
+    let border = egui::Stroke::new(1.0_f32, colors.border);
 
     visuals.window_fill = fill;
     visuals.window_stroke = border;
     visuals.menu_corner_radius = egui::CornerRadius::same(8);
     visuals.selection.bg_fill = selected;
-    visuals.selection.stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, colors.text);
     for widget in [
         &mut visuals.widgets.inactive,
         &mut visuals.widgets.hovered,
@@ -260,16 +256,14 @@ fn style_menu_visuals(visuals: &mut egui::Visuals) {
     visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
     visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
     visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    visuals.widgets.open.bg_fill = egui::Color32::from_rgb(35, 39, 50);
-    visuals.widgets.open.weak_bg_fill = egui::Color32::from_rgb(35, 39, 50);
+    visuals.widgets.hovered.bg_fill = colors.hover;
+    visuals.widgets.hovered.weak_bg_fill = colors.hover;
+    visuals.widgets.open.bg_fill = colors.hover;
+    visuals.widgets.open.weak_bg_fill = colors.hover;
     visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
 }
 
 fn menu_item(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.selectable_label(
-        false,
-        egui::RichText::new(label).color(egui::Color32::WHITE),
-    )
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    ui.selectable_label(false, egui::RichText::new(label).color(colors.text))
 }

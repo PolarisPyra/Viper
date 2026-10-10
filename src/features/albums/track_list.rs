@@ -8,8 +8,6 @@ use crate::{
 };
 use eframe::egui;
 
-const PANEL: egui::Color32 = egui::Color32::from_rgb(20, 23, 31);
-const PANEL_BORDER: egui::Color32 = egui::Color32::from_rgb(45, 49, 61);
 const MIN_PANEL_WIDTH: f32 = 260.0;
 const MAX_PANEL_WIDTH: f32 = 520.0;
 
@@ -21,6 +19,7 @@ pub(crate) fn show(
     settings: &mut Settings,
     artwork_cache: &mut ArtworkCache,
 ) -> Option<String> {
+    let colors = crate::shared::ui::theme::colors(ctx);
     if !workbench.show_album_details {
         return None;
     }
@@ -53,13 +52,13 @@ pub(crate) fn show(
         .resizable(true)
         .width_range(MIN_PANEL_WIDTH..=MAX_PANEL_WIDTH)
         .default_width(width)
-        .frame(egui::Frame::new().fill(PANEL).inner_margin(0))
+        .frame(egui::Frame::new().fill(colors.panel).inner_margin(0))
         .show(ctx, |ui| {
             let panel_rect = ui.max_rect();
             draw_track_panel_background(ui);
             let panel_height = panel_rect.height();
             egui::Frame::new()
-                .fill(PANEL)
+                .fill(colors.panel)
                 .inner_margin(egui::Margin::symmetric(20, 18))
                 .show(ui, |ui| {
                     let content_height = (panel_height - 36.0).max(0.0);
@@ -120,28 +119,30 @@ pub(crate) fn show(
 }
 
 fn draw_track_panel_background(ui: &egui::Ui) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let rect = ui.max_rect();
-    ui.painter().rect_filled(rect, 0.0, PANEL);
+    ui.painter().rect_filled(rect, 0.0, colors.panel);
     ui.painter().line_segment(
         [rect.left_top(), rect.left_bottom()],
-        egui::Stroke::new(1.0_f32, PANEL_BORDER),
+        egui::Stroke::new(1.0_f32, colors.border),
     );
 }
 
 fn draw_track_panel_heading(ui: &mut egui::Ui, track_count: usize, open: &mut bool) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(
                 egui::RichText::new("ALBUM TRACKS")
                     .size(10.0)
                     .strong()
-                    .color(egui::Color32::from_gray(142)),
+                    .color(colors.subtle),
             );
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new(format!("{track_count} songs"))
                     .size(12.0)
-                    .color(egui::Color32::from_gray(175)),
+                    .color(colors.muted),
             );
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -154,9 +155,9 @@ fn draw_track_panel_heading(ui: &mut egui::Ui, track_count: usize, open: &mut bo
                 egui_phosphor::regular::X,
                 egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
                 if response.hovered() {
-                    egui::Color32::WHITE
+                    colors.text
                 } else {
-                    egui::Color32::from_gray(180)
+                    colors.muted
                 },
             );
             if response.on_hover_text("Close album tracks").clicked() {
@@ -175,6 +176,7 @@ fn draw_album_summary(
     settings: &mut crate::platform::persistence::settings::Settings,
     changed: &mut bool,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.horizontal(|ui| {
         if let Some(texture) = cover {
             let rect = ui.allocate_space(egui::vec2(80.0, 80.0)).1;
@@ -186,20 +188,12 @@ fn draw_album_summary(
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 2.0;
             ui.add(
-                egui::Label::new(
-                    egui::RichText::new(title)
-                        .size(18.0)
-                        .color(egui::Color32::WHITE),
-                )
-                .truncate(),
+                egui::Label::new(egui::RichText::new(title).size(18.0).color(colors.text))
+                    .truncate(),
             );
             ui.add(
-                egui::Label::new(
-                    egui::RichText::new(artist)
-                        .size(13.0)
-                        .color(egui::Color32::from_gray(155)),
-                )
-                .truncate(),
+                egui::Label::new(egui::RichText::new(artist).size(13.0).color(colors.muted))
+                    .truncate(),
             );
             ui.add_space(3.0);
             draw_album_preferences(ui, key, settings, changed);
@@ -213,6 +207,7 @@ fn draw_album_preferences(
     settings: &mut crate::platform::persistence::settings::Settings,
     changed: &mut bool,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let rating = settings.album_ratings.get(key).copied().unwrap_or_default();
     let favorite = settings.favorite_albums.contains(key);
     let width = ui.available_width();
@@ -241,9 +236,9 @@ fn draw_album_preferences(
                         ),
                     ),
                     if filled {
-                        egui::Color32::from_rgb(255, 196, 74)
+                        colors.warning
                     } else {
-                        egui::Color32::from_rgb(116, 110, 94)
+                        colors.subtle
                     },
                 );
                 let tooltip = if value == rating {
@@ -290,11 +285,11 @@ fn draw_album_preferences(
                     ),
                 ),
                 if favorite {
-                    egui::Color32::from_rgb(242, 83, 103)
+                    colors.danger
                 } else if response.hovered() {
-                    egui::Color32::WHITE
+                    colors.text
                 } else {
-                    egui::Color32::from_gray(180)
+                    colors.muted
                 },
             );
             if response
@@ -317,9 +312,9 @@ fn draw_album_preferences(
 }
 
 fn draw_action_hover(ui: &egui::Ui, rect: egui::Rect, hovered: bool) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     if hovered {
-        ui.painter()
-            .rect_filled(rect, 7.0, egui::Color32::from_rgb(48, 55, 70));
+        ui.painter().rect_filled(rect, 7.0, colors.hover);
     }
 }
 
@@ -394,14 +389,14 @@ fn draw_track_row(
     position: usize,
     track: &crate::features::library::Track,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 50.0), egui::Sense::click());
     let highlight = egui::Rect::from_min_max(rect.min, rect.max - egui::vec2(12.0, 0.0));
     let playing = playback.current == Some(track_index);
     let selected = *selected_track == Some(track_index);
     if selected {
-        ui.painter()
-            .rect_filled(highlight, 3.0, egui::Color32::from_rgb(42, 39, 59));
+        ui.painter().rect_filled(highlight, 3.0, colors.selected);
     }
 
     let leading =
@@ -413,10 +408,10 @@ fn draw_track_row(
             } else {
                 egui_phosphor::regular::PLAY
             },
-            egui::Color32::from_rgb(174, 149, 255),
+            colors.accent,
         )
     } else {
-        ("", egui::Color32::from_gray(130))
+        ("", colors.subtle)
     };
     ui.painter().text(
         leading.center(),
@@ -450,11 +445,7 @@ fn draw_track_row(
         egui::Label::new(
             egui::RichText::new(&track.title)
                 .size(12.0)
-                .color(if selected {
-                    egui::Color32::from_rgb(194, 176, 255)
-                } else {
-                    egui::Color32::from_rgb(230, 232, 239)
-                }),
+                .color(if selected { colors.accent } else { colors.text }),
         )
         .truncate(),
     );
@@ -462,7 +453,7 @@ fn draw_track_row(
         egui::Label::new(
             egui::RichText::new(&track.artist)
                 .size(10.0)
-                .color(egui::Color32::from_gray(145)),
+                .color(colors.muted),
         )
         .truncate(),
     );
@@ -472,7 +463,7 @@ fn draw_track_row(
             egui::Align2::RIGHT_CENTER,
             format_duration(duration),
             egui::FontId::proportional(10.0),
-            egui::Color32::from_gray(135),
+            colors.subtle,
         );
     }
     if response.clicked() {

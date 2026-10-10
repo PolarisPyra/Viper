@@ -137,6 +137,8 @@ pub struct Settings {
     pub startup_view: StartupView,
     pub left_panel_width: f32,
     pub left_panel_hidden: bool,
+    pub compact_sidebar: bool,
+    pub theme: crate::shared::ui::theme::ThemeId,
     pub right_panel_width: f32,
     pub volume: u8,
     pub album_sort: AlbumSort,
@@ -158,6 +160,8 @@ impl Default for Settings {
             startup_view: StartupView::Home,
             left_panel_width: 240.0,
             left_panel_hidden: false,
+            compact_sidebar: false,
+            theme: Default::default(),
             right_panel_width: 320.0,
             volume: 70,
             album_sort: AlbumSort::Name,
@@ -182,7 +186,7 @@ impl Settings {
             .query_row(
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
-                        album_sort, sort_ascending, discord_application_id, album_layout
+                        album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -199,6 +203,8 @@ impl Settings {
                         row.get::<_, bool>(9)?,
                         row.get::<_, Option<String>>(10)?,
                         row.get::<_, String>(11)?,
+                        row.get::<_, bool>(12)?,
+                        row.get::<_, String>(13)?,
                     ))
                 },
             )
@@ -218,6 +224,8 @@ impl Settings {
             sort_ascending,
             discord_application_id,
             album_layout,
+            compact_sidebar,
+            theme,
         )) = stored
         {
             Self {
@@ -228,6 +236,8 @@ impl Settings {
                 startup_view: decode_setting(&startup_view)?,
                 left_panel_width,
                 left_panel_hidden,
+                compact_sidebar,
+                theme: decode_setting(&theme)?,
                 right_panel_width,
                 volume,
                 album_sort: decode_setting(&album_sort)?,
@@ -314,8 +324,8 @@ impl Settings {
             "INSERT INTO app_settings (
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
-                album_sort, sort_ascending, discord_application_id, album_layout
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
@@ -323,7 +333,9 @@ impl Settings {
                 right_panel_width=excluded.right_panel_width, volume=excluded.volume,
                 album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending,
                 discord_application_id=excluded.discord_application_id,
-                album_layout=excluded.album_layout",
+                album_layout=excluded.album_layout,
+                compact_sidebar=excluded.compact_sidebar,
+                theme=excluded.theme",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -337,6 +349,8 @@ impl Settings {
                 self.sort_ascending,
                 self.discord_application_id,
                 encode_setting(&self.album_layout)?,
+                self.compact_sidebar,
+                encode_setting(&self.theme)?,
             ],
         ).map_err(super::database::database_error)?;
 

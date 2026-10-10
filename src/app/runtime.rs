@@ -11,7 +11,7 @@ impl Default for ViperApp {
 impl eframe::App for ViperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.persist_window_size(ctx);
-        ctx.set_visuals(egui::Visuals::dark());
+        crate::shared::ui::theme::apply(ctx, self.settings.theme);
         ctx.style_mut(|style| {
             style.spacing.scroll.dormant_background_opacity = 0.0;
             style.spacing.scroll.active_background_opacity = 0.0;

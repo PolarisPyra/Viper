@@ -3,14 +3,13 @@ use std::hash::Hash;
 
 pub(crate) const ALBUMS_PER_PAGE: usize = 30;
 
-const CANVAS: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
-
 pub(crate) fn show(
     ctx: &egui::Context,
     total_items: usize,
     page_size: usize,
     key: impl Hash,
 ) -> std::ops::Range<usize> {
+    let colors = crate::shared::ui::theme::colors(ctx);
     let page_count = total_items.div_ceil(page_size);
     let state_id = egui::Id::new(("pagination-page", key));
     let mut page = ctx.data_mut(|data| data.get_temp::<usize>(state_id).unwrap_or_default());
@@ -21,7 +20,7 @@ pub(crate) fn show(
             .exact_height(48.0)
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS)
+                    .fill(colors.canvas)
                     .inner_margin(egui::Margin::symmetric(20, 8)),
             )
             .show(ctx, |ui| {
@@ -42,7 +41,7 @@ pub(crate) fn show(
                     ui.label(
                         egui::RichText::new(format!("Page {} of {page_count}", page + 1))
                             .size(12.0)
-                            .color(egui::Color32::from_gray(180)),
+                            .color(colors.muted),
                     );
                     let previous = ui.add_enabled(
                         page > 0,
@@ -63,7 +62,7 @@ pub(crate) fn show(
                             "{first_item}–{last_item} of {total_items} albums"
                         ))
                         .size(12.0)
-                        .color(egui::Color32::from_gray(150)),
+                        .color(colors.muted),
                     );
                 });
             });

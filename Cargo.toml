@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 eframe = "0.31"
+catppuccin-egui = { version = "5.7", default-features = false, features = ["egui31"] }
 egui-phosphor = { version = "0.9", features = ["fill"] }
 rfd = "0.15"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

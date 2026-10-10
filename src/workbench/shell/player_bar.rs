@@ -9,7 +9,6 @@ use eframe::egui;
 use egui::emath::GuiRounding;
 use std::time::Duration;
 
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(155, 125, 255);
 const PANEL_HEIGHT: f32 = 112.0;
 const TRACK_ART_SIZE: f32 = 68.0;
 
@@ -21,15 +20,13 @@ pub fn show(
     artwork_cache: &mut ArtworkCache,
     error: &mut Option<String>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ctx);
     egui::TopBottomPanel::bottom("scrubber-controls")
         .exact_height(PANEL_HEIGHT)
         .frame(
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(19, 22, 30))
-                .stroke(egui::Stroke::new(
-                    1.0_f32,
-                    egui::Color32::from_rgb(39, 43, 54),
-                ))
+                .fill(colors.panel)
+                .stroke(egui::Stroke::new(1.0_f32, colors.border))
                 .inner_margin(egui::Margin::symmetric(24, 8)),
         )
         .show(ctx, |ui| {
@@ -90,12 +87,13 @@ pub fn show(
                 egui_phosphor::regular::SKIP_BACK,
                 egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
                 if previous.hovered() {
-                    egui::Color32::WHITE
+                    colors.text
                 } else {
-                    egui::Color32::from_gray(190)
+                    colors.muted
                 },
             );
-            ui.painter().circle_filled(play_rect.center(), 23.0, ACCENT);
+            ui.painter()
+                .circle_filled(play_rect.center(), 23.0, colors.accent);
             let icon = if playback.is_playing() {
                 egui_phosphor::regular::PAUSE
             } else {
@@ -106,7 +104,7 @@ pub fn show(
                 egui::Align2::CENTER_CENTER,
                 icon,
                 egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
-                egui::Color32::WHITE,
+                colors.on_accent,
             );
             ui.painter().text(
                 next_rect.center(),
@@ -114,9 +112,9 @@ pub fn show(
                 egui_phosphor::regular::SKIP_FORWARD,
                 egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
                 if next.hovered() {
-                    egui::Color32::WHITE
+                    colors.text
                 } else {
-                    egui::Color32::from_gray(190)
+                    colors.muted
                 },
             );
             let previous = previous.on_hover_text("Previous track");
@@ -173,7 +171,7 @@ pub fn show(
                 egui::Align2::CENTER_CENTER,
                 volume_glyph,
                 egui::FontId::new(22.0, egui::FontFamily::Name("phosphor".into())),
-                egui::Color32::from_gray(175),
+                colors.muted,
             );
             let volume_track_area = egui::Rect::from_min_max(
                 volume_area.min + egui::vec2(30.0, 0.0),
@@ -188,8 +186,7 @@ pub fn show(
                 volume_track_area.center(),
                 egui::vec2(volume_track_area.width(), 3.0),
             );
-            ui.painter()
-                .rect_filled(volume_track, 2.0, egui::Color32::from_rgb(54, 58, 69));
+            ui.painter().rect_filled(volume_track, 2.0, colors.surface);
             let volume_fraction = settings.volume as f32 / 100.0;
             let volume_x = volume_track.left() + volume_track.width() * volume_fraction;
             let volume_thumb_center = egui::pos2(
@@ -202,12 +199,12 @@ pub fn show(
                     egui::pos2(volume_x, volume_track.bottom()),
                 ),
                 2.0,
-                ACCENT,
+                colors.accent,
             );
             ui.painter().rect_filled(
                 egui::Rect::from_center_size(volume_thumb_center, egui::vec2(6.0, 12.0)),
                 3.0,
-                egui::Color32::WHITE,
+                colors.text,
             );
             if volume_response.clicked() || volume_response.dragged() {
                 if let Some(pointer) = volume_response.interact_pointer_pos() {
@@ -238,14 +235,14 @@ pub fn show(
                     egui::Align2::LEFT_CENTER,
                     format_time(position),
                     egui::FontId::proportional(11.0),
-                    egui::Color32::from_gray(135),
+                    colors.subtle,
                 );
 
                 let (rect, response) = ui.allocate_exact_size(
                     egui::vec2((ui.available_width() - 46.0).max(1.0), 14.0),
                     egui::Sense::click_and_drag(),
                 );
-                let track_color = egui::Color32::from_rgb(54, 58, 69);
+                let track_color = colors.surface;
                 let track_rect =
                     egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 3.0));
                 ui.painter().rect_filled(track_rect, 2.0, track_color);
@@ -262,7 +259,7 @@ pub fn show(
                         track_rect.bottom(),
                     ),
                 );
-                ui.painter().rect_filled(progress_rect, 2.0, ACCENT);
+                ui.painter().rect_filled(progress_rect, 2.0, colors.accent);
                 let knob_x = track_rect.left() + track_rect.width() * fraction;
                 if current.is_some() && duration.is_some() {
                     let thumb_center = egui::pos2(
@@ -272,7 +269,7 @@ pub fn show(
                     ui.painter().rect_filled(
                         egui::Rect::from_center_size(thumb_center, egui::vec2(6.0, 12.0)),
                         3.0,
-                        egui::Color32::WHITE,
+                        colors.text,
                     );
                 }
 
@@ -293,7 +290,7 @@ pub fn show(
                     egui::Align2::LEFT_CENTER,
                     duration.map(format_time).unwrap_or_default(),
                     egui::FontId::proportional(11.0),
-                    egui::Color32::from_gray(135),
+                    colors.subtle,
                 );
             });
             ui.painter().text(
@@ -301,7 +298,7 @@ pub fn show(
                 egui::Align2::LEFT_CENTER,
                 format!("{}%", settings.volume),
                 egui::FontId::proportional(11.0),
-                egui::Color32::from_gray(145),
+                colors.muted,
             );
             if playback.is_playing() {
                 ctx.request_repaint_after(Duration::from_millis(100));
@@ -316,6 +313,7 @@ fn show_track_info(
     artwork_cache: &mut ArtworkCache,
     current: Option<usize>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     if let Some(index) = current {
         let album_index = library.model.track_album.get(index).copied();
         let texture = album_index.and_then(|album_index| {
@@ -343,7 +341,7 @@ fn show_track_info(
                     egui::RichText::new(&track.title)
                         .size(15.0)
                         .strong()
-                        .color(egui::Color32::from_rgb(235, 237, 244)),
+                        .color(colors.text),
                 )
                 .truncate(),
             );
@@ -351,7 +349,7 @@ fn show_track_info(
                 egui::Label::new(
                     egui::RichText::new(&track.artist)
                         .size(13.0)
-                        .color(egui::Color32::from_gray(145)),
+                        .color(colors.muted),
                 )
                 .truncate(),
             );
@@ -365,6 +363,7 @@ fn show_audio_chips(
     volume_area: egui::Rect,
     audio_info: Option<&(usize, String, crate::features::library::AudioProperties)>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let Some((track_index, file_type, audio)) = audio_info else {
         return;
     };
@@ -403,7 +402,7 @@ fn show_audio_chips(
     let label = details.join("  •  ");
     let tooltip = tooltip_details.join("\n");
     let font = egui::FontId::proportional(10.0);
-    let text_color = egui::Color32::from_rgb(194, 199, 211);
+    let text_color = colors.muted;
     let galley = ui.painter().layout_no_wrap(label, font, text_color);
     let chip_width = galley.size().x + 16.0;
     let available_width = right - left;
@@ -415,8 +414,8 @@ fn show_audio_chips(
         ui.painter().rect(
             rect,
             3.0,
-            egui::Color32::from_rgb(31, 35, 45),
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(52, 57, 69)),
+            colors.panel,
+            egui::Stroke::new(1.0_f32, colors.border),
             egui::StrokeKind::Inside,
         );
         ui.painter()

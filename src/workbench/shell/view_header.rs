@@ -11,10 +11,11 @@ pub fn show(
     error: &Option<String>,
     dismissed_notice_signature: &mut Option<String>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ctx);
     egui::TopBottomPanel::top("library-topbar")
         .frame(
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(16, 18, 23))
+                .fill(colors.canvas)
                 .inner_margin(egui::Margin::symmetric(20, 12)),
         )
         .show(ctx, |ui| {
@@ -26,7 +27,7 @@ pub fn show(
                     })
                     .size(28.0)
                     .strong()
-                    .color(egui::Color32::WHITE),
+                    .color(colors.text),
                 );
                 if library.scanning {
                     let completed = library
@@ -61,10 +62,10 @@ pub fn show(
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(27, 31, 41))
+                        .fill(colors.panel)
                         .stroke(egui::Stroke::new(
                             1.0_f32,
-                            egui::Color32::from_rgb(43, 48, 61),
+                            colors.border,
                         ))
                         .corner_radius(3.0)
                         .inner_margin(egui::Margin::symmetric(10, 5))
@@ -82,14 +83,14 @@ pub fn show(
                                         18.0,
                                         egui::FontFamily::Name("phosphor".into()),
                                     ),
-                                    egui::Color32::WHITE,
+                                    colors.text,
                                 );
                                 ui.add(
                                     egui::TextEdit::singleline(&mut library.view.search)
-                                        .text_color(egui::Color32::WHITE)
+                                        .text_color(colors.text)
                                         .hint_text(
                                             egui::RichText::new("Search albums")
-                                                .color(egui::Color32::WHITE),
+                                                .color(colors.text),
                                         )
                                         .desired_width(230.0)
                                         .frame(false),
@@ -114,10 +115,10 @@ pub fn show(
                     != Some(notice_signature.as_str())
                 {
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(27, 31, 41))
+                        .fill(colors.panel)
                         .stroke(egui::Stroke::new(
                             1.0_f32,
-                            egui::Color32::from_rgb(43, 48, 61),
+                            colors.border,
                         ))
                         .corner_radius(5.0)
                         .inner_margin(egui::Margin::symmetric(10, 7))
@@ -125,11 +126,11 @@ pub fn show(
                             ui.horizontal_top(|ui| {
                                 ui.vertical(|ui| {
                                     if let Some(message) = error {
-                                        ui.colored_label(egui::Color32::LIGHT_RED, message);
+                                        ui.colored_label(colors.danger, message);
                                     }
                                     if library.model.missing_metadata_tracks > 0 {
                                         ui.colored_label(
-                                            egui::Color32::from_rgb(235, 194, 83),
+                                            colors.warning,
                                             format!(
                                                 "{} tracks have no metadata; using filenames and folders.",
                                                 library.model.missing_metadata_tracks
@@ -142,7 +143,7 @@ pub fn show(
                                                 "Skipped {} empty audio files (0 bytes)",
                                                 library.model.skipped_empty_files.len()
                                             ))
-                                            .color(egui::Color32::from_rgb(235, 194, 83)),
+                                            .color(colors.warning),
                                         )
                                         .id_salt("skipped-empty-audio-files")
                                         .show(ui, |ui| {
@@ -157,13 +158,13 @@ pub fn show(
                                                 "Could not read tags for {} tracks",
                                                 library.model.scan_errors.len()
                                             ))
-                                            .color(egui::Color32::LIGHT_RED),
+                                            .color(colors.danger),
                                         )
                                         .id_salt("scan-track-errors")
                                         .show(ui, |ui| {
                                             for error in &library.model.scan_errors {
                                                 ui.colored_label(
-                                                    egui::Color32::LIGHT_RED,
+                                                    colors.danger,
                                                     error,
                                                 );
                                             }

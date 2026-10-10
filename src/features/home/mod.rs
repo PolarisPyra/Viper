@@ -9,12 +9,6 @@ use crate::{
 use eframe::egui;
 use std::collections::BTreeMap;
 
-const BACKGROUND: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
-const PANEL: egui::Color32 = egui::Color32::from_rgb(25, 29, 39);
-const TEXT: egui::Color32 = egui::Color32::from_rgb(231, 233, 241);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(145, 152, 169);
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(170, 145, 255);
-
 pub(crate) enum HomeAction {
     ChooseMusicFolder,
 }
@@ -47,6 +41,7 @@ pub(crate) fn show(
     settings: &Settings,
     artwork_cache: &mut ArtworkCache,
 ) -> Option<HomeAction> {
+    let colors = crate::shared::ui::theme::colors(ctx);
     let mut view = HomeView {
         workbench,
         library,
@@ -58,7 +53,7 @@ pub(crate) fn show(
     egui::CentralPanel::default()
         .frame(
             egui::Frame::new()
-                .fill(BACKGROUND)
+                .fill(colors.canvas)
                 .inner_margin(egui::Margin::symmetric(24, 0)),
         )
         .show(ctx, |ui| {
@@ -71,13 +66,13 @@ pub(crate) fn show(
                         egui::RichText::new("Your library")
                             .size(30.0)
                             .strong()
-                            .color(TEXT),
+                            .color(colors.text),
                     );
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new("Pick up your current track or browse albums.")
                             .size(14.0)
-                            .color(MUTED),
+                            .color(colors.muted),
                     );
                     ui.add_space(24.0);
 
@@ -166,7 +161,7 @@ pub(crate) fn show(
                                 "Browse albums and mark a favorite to keep it close at hand.",
                             )
                             .size(13.0)
-                            .color(MUTED),
+                            .color(colors.muted),
                         );
                         ui.add_space(10.0);
                         if ui.small_button("Browse albums").clicked() {
@@ -203,8 +198,9 @@ fn albums_by_timestamp(
 }
 
 fn onboarding(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     egui::Frame::new()
-        .fill(PANEL)
+        .fill(colors.panel)
         .corner_radius(14.0)
         .inner_margin(egui::Margin::same(24))
         .show(ui, |ui| {
@@ -214,13 +210,13 @@ fn onboarding(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(72.0, 72.0), egui::Sense::hover());
                 ui.painter()
-                    .rect_filled(rect, 14.0, egui::Color32::from_rgb(48, 42, 72));
+                    .rect_filled(rect, 14.0, colors.selected);
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     egui_phosphor::regular::MUSIC_NOTE,
                     egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
-                    ACCENT,
+                    colors.accent,
                 );
                 ui.add_space(20.0);
                 ui.vertical(|ui| {
@@ -228,7 +224,7 @@ fn onboarding(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                         egui::RichText::new("Start with your music folder")
                             .size(20.0)
                             .strong()
-                            .color(TEXT),
+                            .color(colors.text),
                     );
                     ui.add_space(7.0);
                     ui.label(
@@ -236,7 +232,7 @@ fn onboarding(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                             "Choose where your music is stored. Your albums and artwork will appear here.",
                         )
                         .size(13.0)
-                        .color(MUTED),
+                        .color(colors.muted),
                     );
                     ui.add_space(14.0);
                     if ui
@@ -244,9 +240,9 @@ fn onboarding(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                             egui::Button::new(
                                 egui::RichText::new("Choose Music Folder")
                                     .strong()
-                                    .color(egui::Color32::WHITE),
+                                    .color(colors.on_accent),
                             )
-                            .fill(egui::Color32::from_rgb(111, 83, 205))
+                            .fill(colors.accent)
                             .corner_radius(8.0)
                             .min_size(egui::vec2(190.0, 38.0)),
                         )
@@ -267,14 +263,24 @@ fn empty_state(
     on_click: impl FnOnce(&mut HomeView<'_>),
     view: &mut HomeView<'_>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     egui::Frame::new()
-        .fill(PANEL)
+        .fill(colors.panel)
         .corner_radius(12.0)
         .inner_margin(egui::Margin::same(24))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(title).size(19.0).strong().color(TEXT));
+            ui.label(
+                egui::RichText::new(title)
+                    .size(19.0)
+                    .strong()
+                    .color(colors.text),
+            );
             ui.add_space(5.0);
-            ui.label(egui::RichText::new(description).size(13.0).color(MUTED));
+            ui.label(
+                egui::RichText::new(description)
+                    .size(13.0)
+                    .color(colors.muted),
+            );
             ui.add_space(12.0);
             if ui.button(action).clicked() {
                 on_click(view);
@@ -283,6 +289,7 @@ fn empty_state(
 }
 
 fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     section_heading(ui, "Continue listening");
     if let Some(track_index) = view.playback.current {
         let Some(track) = view.library.model.tracks.get(track_index) else {
@@ -297,7 +304,7 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
             .unwrap_or_default();
 
         egui::Frame::new()
-            .fill(PANEL)
+            .fill(colors.panel)
             .corner_radius(12.0)
             .inner_margin(egui::Margin::same(16))
             .show(ui, |ui| {
@@ -319,11 +326,16 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
                     }
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(title).size(17.0).strong().color(TEXT));
+                        ui.label(
+                            egui::RichText::new(title)
+                                .size(17.0)
+                                .strong()
+                                .color(colors.text),
+                        );
                         ui.label(
                             egui::RichText::new(format!("{artist} · {album_name}"))
                                 .size(13.0)
-                                .color(MUTED),
+                                .color(colors.muted),
                         );
                         ui.add_space(8.0);
                         let label = if view.playback.is_paused() {
@@ -341,7 +353,7 @@ fn show_continue_listening(ui: &mut egui::Ui, view: &mut HomeView<'_>) {
         ui.label(
             egui::RichText::new("Nothing is playing. Browse albums to start playback.")
                 .size(13.0)
-                .color(MUTED),
+                .color(colors.muted),
         );
         ui.add_space(8.0);
         if ui.small_button("Browse albums").clicked() {
@@ -358,6 +370,7 @@ fn album_section(
     title: &str,
     indices: &[usize],
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     section_heading(ui, title);
     egui::ScrollArea::horizontal()
         .id_salt(("home-albums", title))
@@ -374,7 +387,7 @@ fn album_section(
                     let texture = view.album_texture(ctx, index);
                     let (rect, response) =
                         ui.allocate_exact_size(egui::vec2(150.0, 207.0), egui::Sense::click());
-                    ui.painter().rect_filled(rect, 9.0, PANEL);
+                    ui.painter().rect_filled(rect, 9.0, colors.panel);
                     let art_rect = egui::Rect::from_min_size(
                         rect.min + egui::vec2(7.0, 7.0),
                         egui::vec2(136.0, 136.0),
@@ -387,17 +400,13 @@ fn album_section(
                             egui::Color32::WHITE,
                         );
                     } else {
-                        ui.painter().rect_filled(
-                            art_rect,
-                            7.0,
-                            egui::Color32::from_rgb(39, 43, 56),
-                        );
+                        ui.painter().rect_filled(art_rect, 7.0, colors.surface);
                         ui.painter().text(
                             art_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             egui_phosphor::regular::DISC,
                             egui::FontId::new(32.0, egui::FontFamily::Name("phosphor".into())),
-                            MUTED,
+                            colors.muted,
                         );
                     }
                     ui.painter().with_clip_rect(rect.shrink(7.0)).text(
@@ -405,20 +414,20 @@ fn album_section(
                         egui::Align2::LEFT_TOP,
                         title,
                         egui::FontId::proportional(13.0),
-                        TEXT,
+                        colors.text,
                     );
                     ui.painter().with_clip_rect(rect.shrink(7.0)).text(
                         rect.min + egui::vec2(9.0, 174.0),
                         egui::Align2::LEFT_TOP,
                         artist,
                         egui::FontId::proportional(11.0),
-                        MUTED,
+                        colors.muted,
                     );
                     if response.hovered() {
                         ui.painter().rect_stroke(
                             rect,
                             9.0,
-                            egui::Stroke::new(1.0_f32, ACCENT),
+                            egui::Stroke::new(1.0_f32, colors.accent),
                             egui::StrokeKind::Inside,
                         );
                     }
@@ -436,7 +445,13 @@ fn album_section(
 }
 
 fn section_heading(ui: &mut egui::Ui, title: &str) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.add_space(5.0);
-    ui.label(egui::RichText::new(title).size(19.0).strong().color(TEXT));
+    ui.label(
+        egui::RichText::new(title)
+            .size(19.0)
+            .strong()
+            .color(colors.text),
+    );
     ui.add_space(11.0);
 }

@@ -4,19 +4,18 @@ use crate::{
 };
 use eframe::egui;
 
-const CANVAS: egui::Color32 = egui::Color32::from_rgb(16, 18, 23);
-
 pub(crate) fn show(
     ctx: &egui::Context,
     settings: &mut Settings,
     library_view: &mut LibraryViewState,
     error: &mut Option<String>,
 ) {
+    let colors = crate::shared::ui::theme::colors(ctx);
     egui::TopBottomPanel::top("view-toolbar")
         .exact_height(48.0)
         .frame(
             egui::Frame::new()
-                .fill(CANVAS)
+                .fill(colors.canvas)
                 .inner_margin(egui::Margin::symmetric(20, 8)),
         )
         .show(ctx, |ui| {
@@ -51,7 +50,7 @@ pub(crate) fn show(
                             if popup_ui
                                 .selectable_label(
                                     active == sort,
-                                    egui::RichText::new(sort.label()).color(egui::Color32::WHITE),
+                                    egui::RichText::new(sort.label()).color(colors.text),
                                 )
                                 .clicked()
                             {
@@ -133,17 +132,18 @@ fn paint_sort_dropdown(
     label: &str,
     popup_id: egui::Id,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     let open = ui.memory(|memory| memory.is_popup_open(popup_id));
     let fill = if open || response.hovered() {
-        egui::Color32::from_rgb(35, 39, 50)
+        colors.hover
     } else {
-        egui::Color32::from_rgb(27, 31, 41)
+        colors.panel
     };
     ui.painter().rect_filled(rect, 4.0, fill);
     ui.painter().rect_stroke(
         rect,
         4.0,
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(43, 48, 61)),
+        egui::Stroke::new(1.0_f32, colors.border),
         egui::StrokeKind::Inside,
     );
     ui.painter().text(
@@ -151,14 +151,14 @@ fn paint_sort_dropdown(
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(13.0),
-        egui::Color32::from_rgb(221, 225, 236),
+        colors.text,
     );
     ui.painter().text(
         egui::pos2(rect.right() - 14.0, rect.center().y),
         egui::Align2::CENTER_CENTER,
         egui_phosphor::regular::CARET_DOWN,
         egui::FontId::new(15.0, egui::FontFamily::Name("phosphor".into())),
-        egui::Color32::from_rgb(190, 196, 211),
+        colors.muted,
     );
 }
 
@@ -175,14 +175,15 @@ fn paint_icon_button(
     icon: &str,
     selected: bool,
 ) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
     if selected || response.hovered() {
         ui.painter().rect_filled(
             rect,
             6.0,
             if selected {
-                egui::Color32::from_rgb(48, 52, 68)
+                colors.selected
             } else {
-                egui::Color32::from_rgb(35, 39, 50)
+                colors.hover
             },
         );
     }
@@ -192,9 +193,9 @@ fn paint_icon_button(
         icon,
         egui::FontId::new(18.0, egui::FontFamily::Name("phosphor".into())),
         if selected || response.hovered() {
-            egui::Color32::WHITE
+            colors.text
         } else {
-            egui::Color32::from_gray(175)
+            colors.muted
         },
     );
 }
