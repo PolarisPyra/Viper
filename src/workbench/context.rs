@@ -17,7 +17,6 @@ pub(crate) struct WorkbenchContext<'a> {
     pub(crate) preferences: &'a mut PreferencesState,
     pub(crate) artwork_cache: &'a mut ArtworkCache,
     pub(crate) error: &'a mut Option<String>,
-    pub(crate) dismissed_notice_signature: &'a mut Option<String>,
 }
 
 /// User actions that the application layer handles after rendering the workbench.

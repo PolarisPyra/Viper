@@ -10,7 +10,7 @@ pub(super) fn show_album_rows(
     viewport: egui::Rect,
     width: f32,
 ) {
-    const TOP_PADDING: f32 = 16.0;
+    const TOP_PADDING: f32 = 0.0;
     const ROW_GAP: f32 = 10.0;
     let (columns, card_width, art_size, gap, left) = grid_metrics(width);
     let row_height = art_size + 81.0;

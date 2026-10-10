@@ -1,7 +1,7 @@
 use eframe::egui;
 use std::hash::Hash;
 
-pub(crate) const ALBUMS_PER_PAGE: usize = 30;
+pub(crate) const ALBUMS_PER_PAGE: usize = 70;
 
 pub(crate) fn show(
     ctx: &egui::Context,

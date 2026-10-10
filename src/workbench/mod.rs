@@ -18,13 +18,6 @@ pub(crate) fn show(
     {
         actions.push(WorkbenchAction::ChooseMusicFolder);
     }
-    shell::view_header::show(
-        ctx,
-        context.state,
-        context.library,
-        context.error,
-        context.dismissed_notice_signature,
-    );
     shell::player_bar::show(
         ctx,
         context.playback,

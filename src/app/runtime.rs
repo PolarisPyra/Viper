@@ -89,7 +89,6 @@ impl eframe::App for ViperApp {
                 preferences: &mut self.preferences,
                 artwork_cache: &mut self.artwork_cache,
                 error: &mut self.error,
-                dismissed_notice_signature: &mut self.dismissed_notice_signature,
             };
             crate::workbench::show(ctx, &mut context)
         };

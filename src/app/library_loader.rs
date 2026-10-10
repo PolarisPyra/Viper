@@ -5,7 +5,6 @@ impl ViperApp {
     pub(super) fn start_scan(&mut self, root: PathBuf) {
         self.playback.stop();
         self.last_observed_track = None;
-        self.dismissed_notice_signature = None;
         self.artwork_cache.clear();
         self.error = None;
 

@@ -134,6 +134,7 @@ pub(crate) fn apply(ctx: &egui::Context, theme: ThemeId) {
     } = theme.definition();
     visuals.selection.bg_fill = palette.selected;
     visuals.selection.stroke = egui::Stroke::new(1.0_f32, palette.text);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, palette.border);
     visuals.hyperlink_color = palette.secondary;
     visuals.warn_fg_color = palette.warning;
     visuals.error_fg_color = palette.danger;

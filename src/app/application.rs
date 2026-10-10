@@ -32,7 +32,6 @@ pub struct ViperApp {
     last_observed_track: Option<usize>,
     pub(crate) error: Option<String>,
     pub(crate) artwork_cache: ArtworkCache,
-    pub(crate) dismissed_notice_signature: Option<String>,
     last_window_size: Option<[f32; 2]>,
     #[cfg(target_os = "linux")]
     smb_auth: Option<crate::features::library::smb::SmbAuth>,
@@ -106,7 +105,6 @@ impl ViperApp {
             last_observed_track: None,
             error: settings_error,
             artwork_cache: ArtworkCache::new(),
-            dismissed_notice_signature: None,
             last_window_size: None,
             #[cfg(target_os = "linux")]
             smb_auth: saved_samba

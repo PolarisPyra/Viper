@@ -110,6 +110,53 @@ pub(crate) fn show(
                             layout_changed = Some(layout);
                         }
                     }
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(220.0, 32.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            egui::Frame::new()
+                                .fill(colors.panel)
+                                .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                                .corner_radius(3.0)
+                                .inner_margin(egui::Margin::symmetric(10, 0))
+                                .show(ui, |ui| {
+                                    // Frame stroke adds one pixel on each side;
+                                    // keep the inner height at 30 px for a 32 px control.
+                                    ui.set_min_height(30.0);
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            let (rect, _) = ui.allocate_exact_size(
+                                                egui::vec2(18.0, 20.0),
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter().text(
+                                                rect.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                egui_phosphor::regular::MAGNIFYING_GLASS,
+                                                egui::FontId::new(
+                                                    18.0,
+                                                    egui::FontFamily::Name("phosphor".into()),
+                                                ),
+                                                colors.text,
+                                            );
+                                            ui.add(
+                                                egui::TextEdit::singleline(
+                                                    &mut library_view.search,
+                                                )
+                                                .text_color(colors.text)
+                                                .hint_text(
+                                                    egui::RichText::new("Search albums")
+                                                        .color(colors.text),
+                                                )
+                                                .desired_width(170.0)
+                                                .frame(false),
+                                            );
+                                        },
+                                    );
+                                });
+                        },
+                    );
                 });
                 if let Some(layout) = layout_changed {
                     settings.album_layout = layout;
