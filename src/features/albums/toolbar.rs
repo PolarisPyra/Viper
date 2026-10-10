@@ -110,6 +110,7 @@ pub(crate) fn show(
                             layout_changed = Some(layout);
                         }
                     }
+                    ui.add_space(ui.spacing().item_spacing.x);
                     ui.allocate_ui_with_layout(
                         egui::vec2(220.0, 32.0),
                         egui::Layout::left_to_right(egui::Align::Center),
