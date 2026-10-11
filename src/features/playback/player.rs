@@ -231,7 +231,7 @@ impl Playback {
         if self.gapless_active {
             let source_count = self.player.as_ref().map_or(0, Player::len);
             let completed = self.source_count.saturating_sub(source_count);
-            for _ in 0..completed {
+            if completed > 0 {
                 if let Some(finished_track) = self.current {
                     self.push_history(finished_track);
                 }
@@ -241,10 +241,17 @@ impl Playback {
             self.source_count = source_count;
             if source_count == 0 {
                 self.player = None;
-                self.current = None;
                 self.position = Duration::ZERO;
                 self.paused = false;
                 self.gapless_active = false;
+                if let Some(finished_track) = self.current.take() {
+                    self.push_history(finished_track);
+                }
+                if let Some(next) = self.pop_next_queued_track() {
+                    self.start_track(tracks, next);
+                }
+            } else {
+                self.gapless_active = source_count > 1;
             }
             return;
         }
@@ -293,38 +300,21 @@ impl Playback {
         let Some(player) = self.player.as_ref() else {
             return;
         };
-        let mut playable_manual_queue = VecDeque::with_capacity(self.manual_queue.len());
-        while let Some(track_index) = self.manual_queue.pop_front() {
-            let Some(track) = tracks.get(track_index) else {
-                continue;
-            };
-            match self.open_decoder(&track.path) {
-                Ok(decoder) => {
-                    player.append(decoder);
-                    playable_manual_queue.push_back(track_index);
-                }
-                Err(error) => {
-                    self.error = Some(error);
-                }
+        let Some(track_index) = self.next_queued_track() else {
+            return;
+        };
+        let Some(track) = tracks.get(track_index) else {
+            self.discard_next_queued_track();
+            return;
+        };
+        match self.open_decoder(&track.path) {
+            Ok(decoder) => player.append(decoder),
+            Err(error) => {
+                self.discard_next_queued_track();
+                self.error = Some(error);
+                return;
             }
         }
-        self.manual_queue = playable_manual_queue;
-        let mut playable_auto_queue = VecDeque::with_capacity(self.auto_queue.len());
-        while let Some(track_index) = self.auto_queue.pop_front() {
-            let Some(track) = tracks.get(track_index) else {
-                continue;
-            };
-            match self.open_decoder(&track.path) {
-                Ok(decoder) => {
-                    player.append(decoder);
-                    playable_auto_queue.push_back(track_index);
-                }
-                Err(error) => {
-                    self.error = Some(error);
-                }
-            }
-        }
-        self.auto_queue = playable_auto_queue;
         self.source_count = player.len();
         self.gapless_active = self.source_count > 1;
     }
@@ -338,6 +328,21 @@ impl Playback {
         self.manual_queue
             .pop_front()
             .or_else(|| self.auto_queue.pop_front())
+    }
+
+    fn next_queued_track(&self) -> Option<usize> {
+        self.manual_queue
+            .front()
+            .or_else(|| self.auto_queue.front())
+            .copied()
+    }
+
+    fn discard_next_queued_track(&mut self) {
+        if self.manual_queue.is_empty() {
+            self.auto_queue.pop_front();
+        } else {
+            self.manual_queue.pop_front();
+        }
     }
 
     /// Toggle shuffle mode and reorder the tracks waiting in the queue.
