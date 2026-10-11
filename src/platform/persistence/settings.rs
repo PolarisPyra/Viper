@@ -211,6 +211,8 @@ pub struct Settings {
     pub discord_application_id: Option<String>,
     /// Selected album presentation layout.
     pub album_layout: AlbumLayout,
+    /// Whether the album lyrics panel opens when an album track panel is shown.
+    pub lyrics_panel_open: bool,
 }
 
 impl Default for Settings {
@@ -234,6 +236,7 @@ impl Default for Settings {
             album_added: BTreeMap::new(),
             discord_application_id: None,
             album_layout: AlbumLayout::Grid,
+            lyrics_panel_open: false,
         }
     }
 }
@@ -254,7 +257,8 @@ impl Settings {
             .query_row(
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
-                        album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme
+                        album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
+                        lyrics_panel_open
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -273,6 +277,7 @@ impl Settings {
                         row.get::<_, String>(11)?,
                         row.get::<_, bool>(12)?,
                         row.get::<_, String>(13)?,
+                        row.get::<_, bool>(14)?,
                     ))
                 },
             )
@@ -294,6 +299,7 @@ impl Settings {
             album_layout,
             compact_sidebar,
             theme,
+            lyrics_panel_open,
         )) = stored
         {
             Self {
@@ -312,6 +318,7 @@ impl Settings {
                 sort_ascending,
                 discord_application_id,
                 album_layout: decode_setting(&album_layout)?,
+                lyrics_panel_open,
                 ..Self::default()
             }
         } else {
@@ -396,8 +403,9 @@ impl Settings {
             "INSERT INTO app_settings (
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
-                album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
+                lyrics_panel_open
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
@@ -407,7 +415,8 @@ impl Settings {
                 discord_application_id=excluded.discord_application_id,
                 album_layout=excluded.album_layout,
                 compact_sidebar=excluded.compact_sidebar,
-                theme=excluded.theme",
+                theme=excluded.theme,
+                lyrics_panel_open=excluded.lyrics_panel_open",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -423,6 +432,7 @@ impl Settings {
                 encode_setting(&self.album_layout)?,
                 self.compact_sidebar,
                 encode_setting(&self.theme)?,
+                self.lyrics_panel_open,
             ],
         ).map_err(super::database::database_error)?;
 

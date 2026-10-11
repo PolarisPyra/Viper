@@ -167,6 +167,17 @@ pub(crate) fn open() -> io::Result<Connection> {
         transaction.commit().map_err(database_error)?;
     }
 
+    if version < 10 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0010_lyrics_panel_open.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 10)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
     Ok(connection)
 }
 

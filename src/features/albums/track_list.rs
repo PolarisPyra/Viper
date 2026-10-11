@@ -48,6 +48,7 @@ pub(crate) fn show(
     let width = settings
         .right_panel_width
         .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+    let persisted_lyrics_open = settings.lyrics_panel_open;
     let mut changed_settings = false;
     let library = &library_feature.model;
     let selected_track = &mut library_feature.view.selected_track;
@@ -112,6 +113,7 @@ pub(crate) fn show(
                         library,
                         playback.current,
                         playback.position(),
+                        &mut settings.lyrics_panel_open,
                     );
                 });
         });
@@ -119,6 +121,8 @@ pub(crate) fn show(
     let mut save_error = None;
     if changed_settings {
         library_feature.view.album_sort_dirty = true;
+    }
+    if changed_settings || settings.lyrics_panel_open != persisted_lyrics_open {
         save_error = save_settings(settings);
     }
 
@@ -144,6 +148,7 @@ fn draw_lyrics_panel(
     library: &crate::features::library::Library,
     current_track: Option<usize>,
     position: std::time::Duration,
+    persisted_open: &mut bool,
 ) {
     let colors = crate::shared::ui::theme::colors(ctx);
     let open_id = egui::Id::new("album-tracklist-lyrics-open");
@@ -151,7 +156,7 @@ fn draw_lyrics_panel(
     let user_resized_id = egui::Id::new("album-tracklist-lyrics-user-resized");
     let mut open = ctx
         .data(|data| data.get_temp::<bool>(open_id))
-        .unwrap_or(false);
+        .unwrap_or(*persisted_open);
     let mut height = ctx
         .data(|data| data.get_temp::<f32>(height_id))
         .unwrap_or(DEFAULT_LYRICS_HEIGHT);
@@ -217,6 +222,7 @@ fn draw_lyrics_panel(
         data.insert_temp(height_id, height);
         data.insert_temp(user_resized_id, user_resized);
     });
+    *persisted_open = open;
 }
 
 fn draw_lyrics_content(
