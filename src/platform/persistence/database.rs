@@ -178,6 +178,41 @@ pub(crate) fn open() -> io::Result<Connection> {
         transaction.commit().map_err(database_error)?;
     }
 
+    if version < 11 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!(
+                "migrations/0011_discord_rich_presence_enabled.sql"
+            ))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 11)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
+    if version < 12 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0012_audio_presence_controls.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 12)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
+    if version < 13 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0013_shuffle_scope.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 13)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
     Ok(connection)
 }
 

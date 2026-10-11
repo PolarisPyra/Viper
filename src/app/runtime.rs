@@ -41,8 +41,14 @@ impl eframe::App for ViperApp {
                 self.playback.toggle_pause();
             } else if let Some(album_index) = self.library.view.selected_album {
                 if let Some(album) = self.library.model.albums.get(album_index) {
-                    self.playback.play_album(album, &self.library.model.tracks);
+                    self.playback.play_album(
+                        album,
+                        &self.library.model.tracks,
+                        self.settings.shuffle_scope,
+                    );
                 }
+            } else if self.playback.shuffle_enabled {
+                self.playback.play_random_track(&self.library.model.tracks);
             }
         }
         if self.poll_scan() {
@@ -54,9 +60,15 @@ impl eframe::App for ViperApp {
         if self.library.scanning {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        if self.playback.current.is_some() && !self.playback.is_paused() {
-            self.playback
-                .advance_if_finished(&self.library.model.tracks);
+        if self.playback.current.is_some() {
+            if !self.playback.is_paused() {
+                self.playback
+                    .advance_if_finished(&self.library.model.tracks);
+            }
+            self.playback.update_gapless(
+                &self.library.model.tracks,
+                self.settings.gapless_playback && !self.playback.repeat_track,
+            );
             if self.playback.current.is_some() {
                 ctx.request_repaint_after(Duration::from_millis(400));
             }
@@ -74,7 +86,11 @@ impl eframe::App for ViperApp {
             ))
         });
         self.discord_presence.update(
-            self.settings.discord_application_id.as_deref(),
+            if self.settings.discord_rich_presence_enabled {
+                self.settings.discord_application_id.as_deref()
+            } else {
+                None
+            },
             current_track,
             self.playback.is_paused(),
             self.playback.position(),

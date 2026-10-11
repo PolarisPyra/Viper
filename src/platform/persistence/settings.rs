@@ -100,6 +100,17 @@ pub enum AlbumLayout {
     List,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+/// Library scope used when shuffle is enabled.
+pub enum ShuffleScope {
+    /// Shuffle tracks from the album currently playing.
+    #[default]
+    CurrentAlbum,
+    /// Shuffle tracks from the full library.
+    FullLibrary,
+}
+
 #[derive(Clone, Debug, Default)]
 /// Saved SMB share location and authentication details.
 pub struct SambaSettings {
@@ -209,6 +220,12 @@ pub struct Settings {
     pub album_added: BTreeMap<String, u64>,
     /// Optional Discord Rich Presence application ID.
     pub discord_application_id: Option<String>,
+    /// Whether Discord Rich Presence updates are enabled.
+    pub discord_rich_presence_enabled: bool,
+    /// Whether to queue decoders for seamless transitions between tracks.
+    pub gapless_playback: bool,
+    /// Library scope used by shuffle playback and repeat-track skips.
+    pub shuffle_scope: ShuffleScope,
     /// Selected album presentation layout.
     pub album_layout: AlbumLayout,
     /// Whether the album lyrics panel opens when an album track panel is shown.
@@ -235,6 +252,9 @@ impl Default for Settings {
             album_last_played: BTreeMap::new(),
             album_added: BTreeMap::new(),
             discord_application_id: None,
+            discord_rich_presence_enabled: true,
+            gapless_playback: false,
+            shuffle_scope: ShuffleScope::CurrentAlbum,
             album_layout: AlbumLayout::Grid,
             lyrics_panel_open: false,
         }
@@ -258,7 +278,8 @@ impl Settings {
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
                         album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
-                        lyrics_panel_open
+                        lyrics_panel_open, discord_rich_presence_enabled,
+                        gapless_playback, shuffle_scope
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -278,6 +299,9 @@ impl Settings {
                         row.get::<_, bool>(12)?,
                         row.get::<_, String>(13)?,
                         row.get::<_, bool>(14)?,
+                        row.get::<_, bool>(15)?,
+                        row.get::<_, bool>(16)?,
+                        row.get::<_, String>(17)?,
                     ))
                 },
             )
@@ -300,6 +324,9 @@ impl Settings {
             compact_sidebar,
             theme,
             lyrics_panel_open,
+            discord_rich_presence_enabled,
+            gapless_playback,
+            shuffle_scope,
         )) = stored
         {
             Self {
@@ -319,6 +346,9 @@ impl Settings {
                 discord_application_id,
                 album_layout: decode_setting(&album_layout)?,
                 lyrics_panel_open,
+                discord_rich_presence_enabled,
+                gapless_playback,
+                shuffle_scope: decode_setting(&shuffle_scope)?,
                 ..Self::default()
             }
         } else {
@@ -404,8 +434,9 @@ impl Settings {
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
                 album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
-                lyrics_panel_open
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                lyrics_panel_open, discord_rich_presence_enabled,
+                gapless_playback, shuffle_scope
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
@@ -416,7 +447,10 @@ impl Settings {
                 album_layout=excluded.album_layout,
                 compact_sidebar=excluded.compact_sidebar,
                 theme=excluded.theme,
-                lyrics_panel_open=excluded.lyrics_panel_open",
+                lyrics_panel_open=excluded.lyrics_panel_open,
+                discord_rich_presence_enabled=excluded.discord_rich_presence_enabled,
+                gapless_playback=excluded.gapless_playback,
+                shuffle_scope=excluded.shuffle_scope",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -433,6 +467,9 @@ impl Settings {
                 self.compact_sidebar,
                 encode_setting(&self.theme)?,
                 self.lyrics_panel_open,
+                self.discord_rich_presence_enabled,
+                self.gapless_playback,
+                encode_setting(&self.shuffle_scope)?,
             ],
         ).map_err(super::database::database_error)?;
 

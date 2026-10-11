@@ -15,6 +15,7 @@ pub(crate) fn show(
     workbench: &mut WorkbenchState,
     preferences: &mut PreferencesState,
     settings: &mut Settings,
+    library: &crate::features::library::state::LibraryFeature,
     error: &mut Option<String>,
 ) -> Option<PreferencesAction> {
     let colors = crate::shared::ui::theme::colors(ctx);
@@ -99,11 +100,12 @@ pub(crate) fn show(
                     match preferences.category.unwrap_or(Category::General) {
                         Category::General => show_general(ui, settings, error, &mut action),
                         Category::Connections => {
-                            show_connections(ui, preferences, settings, error, &mut action)
+                            show_connections(ui, preferences, settings, library, error, &mut action)
                         }
                         Category::View => show_view(ui, settings, &mut action),
                         Category::Theme => show_theme(ui, settings, &mut action),
-                        Category::Audio | Category::Services | Category::About => {}
+                        Category::Audio => show_audio(ui, settings, &mut action),
+                        Category::Services | Category::About => {}
                     }
                 });
         });
@@ -298,6 +300,50 @@ fn show_theme(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<Pr
     });
 }
 
+fn show_audio(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<PreferencesAction>) {
+    ui.set_min_width(420.0);
+    ui.add_space(8.0);
+    section_title(ui, "Playback");
+    ui.label("Choose how tracks transition during album playback.");
+    ui.add_space(10.0);
+    if ui
+        .checkbox(&mut settings.gapless_playback, "Gapless playback")
+        .on_hover_text("Queue the next track before the current track ends.")
+        .changed()
+    {
+        *action = Some(PreferencesAction::SaveSettings);
+    }
+    ui.add_space(22.0);
+    section_title(ui, "Shuffle");
+    ui.label("Choose which tracks are included when shuffle is on.");
+    ui.add_space(8.0);
+    let scope = settings.shuffle_scope;
+    let mut selected_scope = scope;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        for (option, label, status) in [
+            (
+                crate::platform::persistence::settings::ShuffleScope::CurrentAlbum,
+                "Current album",
+                "Shuffle tracks from the playing album",
+            ),
+            (
+                crate::platform::persistence::settings::ShuffleScope::FullLibrary,
+                "Full library",
+                "Shuffle tracks from your entire library",
+            ),
+        ] {
+            if choice_row(ui, label, selected_scope == option, status).clicked() {
+                selected_scope = option;
+            }
+        }
+    });
+    if selected_scope != scope {
+        settings.shuffle_scope = selected_scope;
+        *action = Some(PreferencesAction::SaveSettings);
+    }
+}
+
 fn choice_row(ui: &mut egui::Ui, label: &str, selected: bool, status: &str) -> egui::Response {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     let (rect, response) =
@@ -390,6 +436,7 @@ fn show_connections(
     ui: &mut egui::Ui,
     preferences: &mut PreferencesState,
     settings: &mut Settings,
+    library: &crate::features::library::state::LibraryFeature,
     _error: &mut Option<String>,
     action: &mut Option<PreferencesAction>,
 ) {
@@ -399,6 +446,31 @@ fn show_connections(
     #[cfg(target_os = "linux")]
     {
         section_title(ui, "Samba / SMB share");
+        let is_smb = settings
+            .music_path
+            .as_deref()
+            .is_some_and(crate::features::library::smb::is_smb_path);
+        let status = if library.scanning && is_smb {
+            let completed = library
+                .progress
+                .completed
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let total = library
+                .progress
+                .total
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if total == 0 {
+                "Scanning share…".to_owned()
+            } else {
+                format!("Scanning share… {completed} of {total}")
+            }
+        } else if is_smb {
+            format!("Configured · {} tracks indexed", library.model.tracks.len())
+        } else {
+            "No SMB share configured".to_owned()
+        };
+        ui.label(format!("Status: {status}"));
+        ui.add_space(8.0);
         ui.label(
             "Connect directly to a network share. Connection details are stored in the local SQLite database for future access.",
         );
@@ -437,8 +509,15 @@ fn show_connections(
         ui.add_space(28.0);
     }
     section_title(ui, "Discord Rich Presence");
-    ui.label("Show the song currently playing in your Discord profile.");
-    ui.add_space(10.0);
+    ui.label("Show the currently playing song as a rich presence on your Discord profile.");
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x += 6.0;
+        ui.checkbox(
+            &mut settings.discord_rich_presence_enabled,
+            "Show currently playing song as Discord status",
+        );
+    });
+    ui.add_space(18.0);
     ui.label("Discord Application ID");
     connection_text_edit(
         ui,

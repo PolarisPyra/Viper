@@ -14,6 +14,7 @@ pub(in crate::workbench) fn show(
     workbench: &mut WorkbenchState,
     library: &LibraryFeature,
     playback: &mut Playback,
+    settings: &crate::platform::persistence::settings::Settings,
 ) -> Option<MenuBarAction> {
     let colors = crate::shared::ui::theme::colors(ctx);
     let mut action = None;
@@ -110,6 +111,10 @@ pub(in crate::workbench) fn show(
                                 .color(colors.muted),
                             |ui| {
                                 style_menu_popup(ui);
+                                if menu_item(ui, "Show Queue").clicked() {
+                                    workbench.show_queue = true;
+                                    ui.close_menu();
+                                }
                                 let has_current_track = playback.current.is_some();
                                 let can_play =
                                     has_current_track || library.view.selected_album.is_some();
@@ -134,8 +139,14 @@ pub(in crate::workbench) fn show(
                                         playback.toggle_pause();
                                     } else if let Some(album_index) = library.view.selected_album {
                                         if let Some(album) = library.model.albums.get(album_index) {
-                                            playback.play_album(album, &library.model.tracks);
+                                            playback.play_album(
+                                                album,
+                                                &library.model.tracks,
+                                                settings.shuffle_scope,
+                                            );
                                         }
+                                    } else if playback.shuffle_enabled {
+                                        playback.play_random_track(&library.model.tracks);
                                     }
                                     ui.close_menu();
                                 }
@@ -164,7 +175,11 @@ pub(in crate::workbench) fn show(
                                     )
                                     .clicked()
                                 {
-                                    playback.skip_next(&library.model.tracks);
+                                    playback.skip_next(
+                                        &library.model.tracks,
+                                        &library.model.albums,
+                                        settings.shuffle_scope,
+                                    );
                                     ui.close_menu();
                                 }
                                 if ui
@@ -208,7 +223,268 @@ pub(in crate::workbench) fn show(
         });
 
     ctx.set_style(original_style);
+    show_queue_popup(ctx, workbench, playback, library);
     action
+}
+
+fn show_queue_popup(
+    ctx: &egui::Context,
+    workbench: &mut WorkbenchState,
+    playback: &mut Playback,
+    library: &LibraryFeature,
+) {
+    if !workbench.show_queue {
+        return;
+    }
+
+    let colors = crate::shared::ui::theme::colors(ctx);
+    let screen_size = ctx.screen_rect().size();
+    let margin = 24.0_f32.min(screen_size.x * 0.05).min(screen_size.y * 0.05);
+    let panel_size = egui::vec2(
+        (screen_size.x - margin * 2.0).min(560.0).max(0.0),
+        (screen_size.y - margin * 2.0).min(620.0).max(0.0),
+    );
+    let content_size = (panel_size - egui::vec2(36.0, 36.0)).max(egui::Vec2::ZERO);
+    let mut close_requested = false;
+
+    let response = egui::Modal::new(egui::Id::new("playback-queue-modal"))
+        .frame(
+            egui::Frame::new()
+                .fill(colors.panel)
+                .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                .corner_radius(14.0)
+                .inner_margin(egui::Margin::symmetric(18, 18)),
+        )
+        .backdrop_color(colors.backdrop)
+        .show(ctx, |ui| {
+            ui.set_min_size(content_size);
+            ui.set_max_size(content_size);
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("Up Next")
+                            .size(23.0)
+                            .strong()
+                            .color(colors.text),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} queued song{}",
+                            playback.queue().len(),
+                            if playback.queue().len() == 1 { "" } else { "s" }
+                        ))
+                        .size(12.0)
+                        .color(colors.muted),
+                    );
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click());
+                    if response.hovered() {
+                        ui.painter().rect_filled(rect, 8.0, colors.hover);
+                    }
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        egui_phosphor::regular::X,
+                        egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
+                        if response.hovered() {
+                            colors.text
+                        } else {
+                            colors.muted
+                        },
+                    );
+                    if response.on_hover_text("Close queue").clicked() {
+                        close_requested = true;
+                    }
+                });
+            });
+            ui.add_space(16.0);
+            ui.separator();
+            ui.add_space(12.0);
+
+            if let Some(current) = playback
+                .current
+                .and_then(|index| library.model.tracks.get(index))
+            {
+                egui::Frame::new()
+                    .fill(colors.surface)
+                    .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                    .corner_radius(9.0)
+                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("NOW PLAYING")
+                                .size(10.0)
+                                .strong()
+                                .color(colors.accent),
+                        );
+                        ui.add_space(3.0);
+                        ui.label(
+                            egui::RichText::new(&current.title)
+                                .size(13.0)
+                                .strong()
+                                .color(colors.text),
+                        );
+                        ui.label(
+                            egui::RichText::new(&current.artist)
+                                .size(11.0)
+                                .color(colors.muted),
+                        );
+                    });
+                ui.add_space(12.0);
+            }
+
+            let mut remove = None;
+            let mut move_item = None;
+            if playback.queue().is_empty() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(36.0);
+                    ui.label(
+                        egui::RichText::new("The queue is empty")
+                            .size(15.0)
+                            .strong()
+                            .color(colors.text),
+                    );
+                    ui.label(
+                        egui::RichText::new("Right-click a song to add it to Up Next.")
+                            .size(12.0)
+                            .color(colors.muted),
+                    );
+                });
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt("playback-queue-list")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 7.0;
+                        for (index, track_index) in playback.queue().iter().copied().enumerate() {
+                            egui::Frame::new()
+                                .fill(colors.surface)
+                                .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                                .corner_radius(8.0)
+                                .inner_margin(egui::Margin::symmetric(10, 7))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(format!("{:02}", index + 1))
+                                                .size(11.0)
+                                                .color(colors.subtle),
+                                        );
+                                        ui.vertical(|ui| {
+                                            if let Some(track) =
+                                                library.model.tracks.get(track_index)
+                                            {
+                                                ui.label(
+                                                    egui::RichText::new(&track.title)
+                                                        .size(12.0)
+                                                        .strong()
+                                                        .color(colors.text),
+                                                );
+                                                ui.label(
+                                                    egui::RichText::new(&track.artist)
+                                                        .size(10.0)
+                                                        .color(colors.muted),
+                                                );
+                                            } else {
+                                                ui.label("Unavailable track");
+                                            }
+                                        });
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if queue_action_button(
+                                                    ui,
+                                                    "remove-queue-item",
+                                                    index,
+                                                    egui_phosphor::regular::X,
+                                                    "Remove from queue",
+                                                    true,
+                                                )
+                                                .clicked()
+                                                {
+                                                    remove = Some(index);
+                                                }
+                                                if queue_action_button(
+                                                    ui,
+                                                    "move-queue-item-down",
+                                                    index,
+                                                    egui_phosphor::regular::ARROW_DOWN,
+                                                    "Move down",
+                                                    index + 1 < playback.queue().len(),
+                                                )
+                                                .clicked()
+                                                {
+                                                    move_item = Some((index, index + 1));
+                                                }
+                                                if queue_action_button(
+                                                    ui,
+                                                    "move-queue-item-up",
+                                                    index,
+                                                    egui_phosphor::regular::ARROW_UP,
+                                                    "Move up",
+                                                    index > 0,
+                                                )
+                                                .clicked()
+                                                {
+                                                    move_item = Some((index, index - 1));
+                                                }
+                                            },
+                                        );
+                                    });
+                                });
+                        }
+                    });
+            }
+
+            if let Some((from, to)) = move_item {
+                playback.move_queued(from, to, &library.model.tracks);
+            }
+            if let Some(index) = remove {
+                playback.remove_queued(index, &library.model.tracks);
+            }
+        });
+
+    if close_requested || response.should_close() {
+        workbench.show_queue = false;
+    }
+}
+
+fn queue_action_button(
+    ui: &mut egui::Ui,
+    salt: &'static str,
+    index: usize,
+    icon: &str,
+    tooltip: &'static str,
+    enabled: bool,
+) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+    let response = ui.interact(
+        rect,
+        ui.id().with((salt, index)),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    if response.hovered() && enabled {
+        ui.painter().rect_filled(rect, 7.0, colors.hover);
+    }
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
+        if response.hovered() && enabled {
+            colors.text
+        } else {
+            colors.muted
+        },
+    );
+    response.on_hover_text(tooltip)
 }
 
 fn style_menu_popup(ui: &mut egui::Ui) {

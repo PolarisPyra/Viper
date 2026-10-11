@@ -103,6 +103,7 @@ pub(crate) fn show(
                         selected_track,
                         album_index,
                         settings.lyrics_panel_open,
+                        settings.shuffle_scope,
                     );
                     crate::features::lyrics::panel::show(
                         ctx,
@@ -378,6 +379,7 @@ fn show_tracks(
     selected_track: &mut Option<usize>,
     album_index: usize,
     lyrics_open: bool,
+    shuffle_scope: crate::platform::persistence::settings::ShuffleScope,
 ) -> f32 {
     let Some(album) = library.albums.get(album_index) else {
         return 0.0;
@@ -431,6 +433,7 @@ fn show_tracks(
                             track_index,
                             position,
                             track,
+                            shuffle_scope,
                         );
                     }
                     ui.add_space(18.0);
@@ -449,14 +452,26 @@ fn draw_track_row(
     track_index: usize,
     position: usize,
     track: &crate::features::library::Track,
+    shuffle_scope: crate::platform::persistence::settings::ShuffleScope,
 ) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 50.0), egui::Sense::click());
+    if response.secondary_clicked() {
+        *selected_track = Some(track_index);
+    }
+    response.context_menu(|ui| {
+        if ui.button("Add to queue").clicked() {
+            playback.enqueue(track_index, &library.tracks);
+            ui.close_menu();
+        }
+    });
+    let context_menu_open = response.context_menu_opened();
     let highlight = egui::Rect::from_min_max(rect.min, rect.max - egui::vec2(12.0, 0.0));
     let playing = playback.current == Some(track_index);
     let selected = *selected_track == Some(track_index);
-    if selected {
+    let highlighted = selected || context_menu_open;
+    if highlighted {
         ui.painter().rect_filled(highlight, 3.0, colors.selected);
     }
 
@@ -506,7 +521,11 @@ fn draw_track_row(
         egui::Label::new(
             egui::RichText::new(&track.title)
                 .size(12.0)
-                .color(if selected { colors.accent } else { colors.text }),
+                .color(if highlighted {
+                    colors.accent
+                } else {
+                    colors.text
+                }),
         )
         .truncate(),
     );
@@ -530,7 +549,7 @@ fn draw_track_row(
     if response.clicked() {
         if selected {
             if let Some(album) = library.albums.get(album_index) {
-                playback.play_track_in_album(album, &library.tracks, track_index);
+                playback.play_track_in_album(album, &library.tracks, track_index, shuffle_scope);
             }
         } else {
             *selected_track = Some(track_index);

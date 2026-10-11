@@ -39,7 +39,7 @@ pub(in crate::workbench) fn show(
             let row_width = ui.available_width();
             let (row_rect, _) =
                 ui.allocate_exact_size(egui::vec2(row_width, 72.0), egui::Sense::hover());
-            let max_info_width = ((row_width - 164.0) * 0.5 - 16.0).max(0.0);
+            let max_info_width = ((row_width - 320.0) * 0.5 - 16.0).max(0.0);
             let info_rect = egui::Rect::from_min_size(
                 row_rect.min,
                 egui::vec2(
@@ -58,17 +58,53 @@ pub(in crate::workbench) fn show(
             // shifts them when the track-info column has no content.
             let controls_rect = egui::Rect::from_center_size(
                 row_rect.center(),
-                egui::vec2(164.0, row_rect.height()),
+                egui::vec2(320.0, row_rect.height()),
+            );
+            let stop_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.center().x - 120.0, controls_rect.center().y),
+                egui::vec2(34.0, 38.0),
+            );
+            let shuffle_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.center().x - 72.0, controls_rect.center().y),
+                egui::vec2(34.0, 38.0),
             );
             let previous_rect = egui::Rect::from_center_size(
-                egui::pos2(controls_rect.left() + 23.0, controls_rect.center().y),
-                egui::vec2(46.0, 44.0),
+                egui::pos2(row_rect.center().x - 24.0, controls_rect.center().y),
+                egui::vec2(40.0, 44.0),
             );
-            let play_rect =
-                egui::Rect::from_center_size(controls_rect.center(), egui::vec2(50.0, 50.0));
+            let play_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.center().x + 24.0, controls_rect.center().y),
+                egui::vec2(50.0, 50.0),
+            );
             let next_rect = egui::Rect::from_center_size(
-                egui::pos2(controls_rect.right() - 23.0, controls_rect.center().y),
-                egui::vec2(46.0, 44.0),
+                egui::pos2(row_rect.center().x + 72.0, controls_rect.center().y),
+                egui::vec2(40.0, 44.0),
+            );
+            let repeat_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.center().x + 120.0, controls_rect.center().y),
+                egui::vec2(34.0, 38.0),
+            );
+            let stop = transport_icon_button(
+                ui,
+                stop_rect,
+                "player-stop",
+                egui_phosphor::regular::STOP,
+                "Stop",
+                false,
+                playback.current.is_some(),
+            );
+            let shuffle = transport_icon_button(
+                ui,
+                shuffle_rect,
+                "player-shuffle",
+                egui_phosphor::regular::SHUFFLE,
+                if playback.shuffle_enabled {
+                    "Shuffle: On"
+                } else {
+                    "Shuffle: Off"
+                },
+                playback.shuffle_enabled,
+                true,
             );
             let previous = ui.interact(
                 previous_rect,
@@ -85,11 +121,32 @@ pub(in crate::workbench) fn show(
                 egui::Id::new("player-next"),
                 egui::Sense::click(),
             );
+            let repeat = transport_icon_button(
+                ui,
+                repeat_rect,
+                if playback.repeat_track {
+                    "player-repeat-track"
+                } else {
+                    "player-repeat"
+                },
+                if playback.repeat_track {
+                    egui_phosphor::regular::REPEAT_ONCE
+                } else {
+                    egui_phosphor::regular::REPEAT
+                },
+                if playback.repeat_track {
+                    "Repeat track: On"
+                } else {
+                    "Repeat track: Off"
+                },
+                playback.repeat_track,
+                true,
+            );
             ui.painter().text(
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_BACK,
-                egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
                 if previous.hovered() {
                     colors.text
                 } else {
@@ -114,7 +171,7 @@ pub(in crate::workbench) fn show(
                 next_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_FORWARD,
-                egui::FontId::new(30.0, egui::FontFamily::Name("phosphor".into())),
+                egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
                 if next.hovered() {
                     colors.text
                 } else {
@@ -128,6 +185,19 @@ pub(in crate::workbench) fn show(
                 "Play"
             });
             let next = next.on_hover_text("Next track");
+            if stop.clicked() {
+                playback.stop();
+            }
+            if shuffle.clicked() {
+                playback.toggle_shuffle(
+                    &library.model.tracks,
+                    &library.model.albums,
+                    settings.shuffle_scope,
+                );
+            }
+            if repeat.clicked() {
+                playback.toggle_repeat_track(&library.model.tracks);
+            }
             if previous.clicked() {
                 playback.previous(&library.model.tracks);
             }
@@ -136,12 +206,18 @@ pub(in crate::workbench) fn show(
                     playback.toggle_pause();
                 } else if let Some(album_index) = library.view.selected_album {
                     if let Some(album) = library.model.albums.get(album_index) {
-                        playback.play_album(album, &library.model.tracks);
+                        playback.play_album(album, &library.model.tracks, settings.shuffle_scope);
                     }
+                } else if playback.shuffle_enabled {
+                    playback.play_random_track(&library.model.tracks);
                 }
             }
             if next.clicked() {
-                playback.skip_next(&library.model.tracks);
+                playback.skip_next(
+                    &library.model.tracks,
+                    &library.model.albums,
+                    settings.shuffle_scope,
+                );
             }
 
             let volume_area = egui::Rect::from_min_size(
@@ -308,6 +384,42 @@ pub(in crate::workbench) fn show(
                 ctx.request_repaint_after(Duration::from_millis(100));
             }
         });
+}
+
+fn transport_icon_button(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: &'static str,
+    icon: &str,
+    tooltip: &str,
+    active: bool,
+    enabled: bool,
+) -> egui::Response {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let response = ui.interact(
+        rect,
+        egui::Id::new(id),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let color = if active {
+        colors.accent
+    } else if response.hovered() && enabled {
+        colors.text
+    } else {
+        colors.muted
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
+        color,
+    );
+    response.on_hover_text(tooltip)
 }
 
 fn show_track_info(

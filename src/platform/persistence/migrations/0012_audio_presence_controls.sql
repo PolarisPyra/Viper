@@ -1,0 +1,2 @@
+ALTER TABLE app_settings
+ADD COLUMN gapless_playback INTEGER NOT NULL DEFAULT 0;

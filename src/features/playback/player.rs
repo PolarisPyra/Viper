@@ -1,6 +1,9 @@
-use crate::features::library::{Album, Track};
+use crate::{
+    features::library::{Album, Track},
+    platform::persistence::settings::ShuffleScope,
+};
 use rodio::{Decoder, MixerDeviceSink, Player};
-use std::{collections::VecDeque, fs::File, path::Path, time::Duration};
+use std::{collections::VecDeque, fs::File, io::BufReader, path::Path, time::Duration};
 
 /// Current audio playback state, queue, history, and volume.
 pub struct Playback {
@@ -10,10 +13,18 @@ pub struct Playback {
     pub error: Option<String>,
     output: Option<MixerDeviceSink>,
     player: Option<Player>,
-    queue: VecDeque<usize>,
+    manual_queue: VecDeque<usize>,
+    auto_queue: VecDeque<usize>,
     history: VecDeque<usize>,
     position: Duration,
     paused: bool,
+    gapless_active: bool,
+    source_count: usize,
+    /// Whether upcoming tracks are shuffled.
+    pub(crate) shuffle_enabled: bool,
+    shuffle_queue_scope: Option<ShuffleScope>,
+    /// Whether the current track repeats when it ends.
+    pub(crate) repeat_track: bool,
     /// Playback volume as a percentage from 0 to 100.
     pub volume: u8,
     #[cfg(target_os = "linux")]
@@ -120,18 +131,50 @@ impl Playback {
         self.start_track(tracks, track_index);
     }
 
-    /// Play an album from its first track and queue the remaining tracks.
+    /// Start a random library track and shuffle the remaining tracks.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks.
+    pub fn play_random_track(&mut self, tracks: &[Track]) {
+        if tracks.is_empty() {
+            return;
+        }
+        self.stop();
+        self.error = None;
+        self.auto_queue.extend(0..tracks.len());
+        self.shuffle_queue();
+        self.shuffle_queue_scope = Some(ShuffleScope::FullLibrary);
+        if let Some(track_index) = self.auto_queue.pop_front() {
+            self.start_track(tracks, track_index);
+        }
+    }
+
+    /// Play an album and arrange its remaining tracks according to shuffle settings.
     ///
     /// # Arguments
     /// * `album` - Album whose track indexes define playback order.
     /// * `tracks` - Current library tracks.
-    pub fn play_album(&mut self, album: &Album, tracks: &[Track]) {
+    /// * `shuffle_scope` - Album-only or full-library shuffle range.
+    pub fn play_album(&mut self, album: &Album, tracks: &[Track], shuffle_scope: ShuffleScope) {
         let Some((&first, rest)) = album.tracks.split_first() else {
             return;
         };
         self.stop();
         self.error = None;
-        self.queue.extend(rest.iter().copied());
+        let first = if self.shuffle_enabled {
+            match shuffle_scope {
+                ShuffleScope::CurrentAlbum => self.auto_queue.extend(album.tracks.iter().copied()),
+                ShuffleScope::FullLibrary => self.auto_queue.extend(0..tracks.len()),
+            }
+            self.auto_queue.retain(|&index| index != first);
+            self.shuffle_queue();
+            self.shuffle_queue_scope = Some(shuffle_scope);
+            self.auto_queue.pop_front().unwrap_or(first)
+        } else {
+            self.shuffle_queue_scope = None;
+            self.auto_queue.extend(rest.iter().copied());
+            first
+        };
         self.start_track(tracks, first);
     }
 
@@ -141,14 +184,40 @@ impl Playback {
     /// * `album` - Album containing the selected track.
     /// * `tracks` - Current library tracks.
     /// * `track_index` - Index of the selected track in `tracks`.
-    pub fn play_track_in_album(&mut self, album: &Album, tracks: &[Track], track_index: usize) {
+    /// * `shuffle_scope` - Album-only or full-library shuffle range.
+    pub fn play_track_in_album(
+        &mut self,
+        album: &Album,
+        tracks: &[Track],
+        track_index: usize,
+        shuffle_scope: ShuffleScope,
+    ) {
         let Some(position) = album.tracks.iter().position(|&index| index == track_index) else {
             return;
         };
         self.stop();
         self.error = None;
-        self.queue
-            .extend(album.tracks[position + 1..].iter().copied());
+        if self.shuffle_enabled && shuffle_scope == ShuffleScope::FullLibrary {
+            self.auto_queue
+                .extend((0..tracks.len()).filter(|&index| index != track_index));
+        } else if self.shuffle_enabled {
+            self.auto_queue.extend(
+                album
+                    .tracks
+                    .iter()
+                    .copied()
+                    .filter(|&index| index != track_index),
+            );
+        } else {
+            self.auto_queue
+                .extend(album.tracks[position + 1..].iter().copied());
+        }
+        if self.shuffle_enabled {
+            self.shuffle_queue();
+            self.shuffle_queue_scope = Some(shuffle_scope);
+        } else {
+            self.shuffle_queue_scope = None;
+        }
         self.start_track(tracks, track_index);
     }
 
@@ -156,7 +225,29 @@ impl Playback {
     ///
     /// # Arguments
     /// * `tracks` - Current library tracks.
+    /// * `albums` - Albums used to identify the current album shuffle range.
+    /// * `shuffle_scope` - Range used to refresh upcoming tracks while shuffling.
     pub fn advance_if_finished(&mut self, tracks: &[Track]) {
+        if self.gapless_active {
+            let source_count = self.player.as_ref().map_or(0, Player::len);
+            let completed = self.source_count.saturating_sub(source_count);
+            for _ in 0..completed {
+                if let Some(finished_track) = self.current {
+                    self.push_history(finished_track);
+                }
+                self.current = self.pop_next_queued_track();
+                self.position = Duration::ZERO;
+            }
+            self.source_count = source_count;
+            if source_count == 0 {
+                self.player = None;
+                self.current = None;
+                self.position = Duration::ZERO;
+                self.paused = false;
+                self.gapless_active = false;
+            }
+            return;
+        }
         let finished = self
             .player
             .as_ref()
@@ -166,11 +257,17 @@ impl Playback {
         }
 
         let finished_track = self.current;
+        if self.repeat_track {
+            if let Some(track) = finished_track {
+                self.start_track(tracks, track);
+            }
+            return;
+        }
         self.player = None;
         self.current = None;
         self.position = Duration::ZERO;
         self.paused = false;
-        if let Some(next) = self.queue.pop_front() {
+        if let Some(next) = self.pop_next_queued_track() {
             if let Some(track) = finished_track {
                 self.push_history(track);
             }
@@ -178,12 +275,231 @@ impl Playback {
         }
     }
 
+    /// Append queued tracks to the active player for gapless transitions.
+    ///
+    /// # Arguments
+    /// * `tracks` - Current library tracks indexed by the playback queue.
+    /// * `enabled` - Whether gapless transitions should be active.
+    pub fn update_gapless(&mut self, tracks: &[Track], enabled: bool) {
+        if !enabled {
+            if self.gapless_active {
+                self.rebuild_current(tracks);
+            }
+            return;
+        }
+        if self.gapless_active || self.current.is_none() {
+            return;
+        }
+        let Some(player) = self.player.as_ref() else {
+            return;
+        };
+        let mut playable_manual_queue = VecDeque::with_capacity(self.manual_queue.len());
+        while let Some(track_index) = self.manual_queue.pop_front() {
+            let Some(track) = tracks.get(track_index) else {
+                continue;
+            };
+            match self.open_decoder(&track.path) {
+                Ok(decoder) => {
+                    player.append(decoder);
+                    playable_manual_queue.push_back(track_index);
+                }
+                Err(error) => {
+                    self.error = Some(error);
+                }
+            }
+        }
+        self.manual_queue = playable_manual_queue;
+        let mut playable_auto_queue = VecDeque::with_capacity(self.auto_queue.len());
+        while let Some(track_index) = self.auto_queue.pop_front() {
+            let Some(track) = tracks.get(track_index) else {
+                continue;
+            };
+            match self.open_decoder(&track.path) {
+                Ok(decoder) => {
+                    player.append(decoder);
+                    playable_auto_queue.push_back(track_index);
+                }
+                Err(error) => {
+                    self.error = Some(error);
+                }
+            }
+        }
+        self.auto_queue = playable_auto_queue;
+        self.source_count = player.len();
+        self.gapless_active = self.source_count > 1;
+    }
+
+    /// Return manually queued tracks, excluding automatic album and shuffle tracks.
+    pub(crate) fn queue(&self) -> &VecDeque<usize> {
+        &self.manual_queue
+    }
+
+    fn pop_next_queued_track(&mut self) -> Option<usize> {
+        self.manual_queue
+            .pop_front()
+            .or_else(|| self.auto_queue.pop_front())
+    }
+
+    /// Toggle shuffle mode and reorder the tracks waiting in the queue.
+    pub(crate) fn toggle_shuffle(
+        &mut self,
+        tracks: &[Track],
+        albums: &[Album],
+        shuffle_scope: ShuffleScope,
+    ) {
+        self.shuffle_enabled = !self.shuffle_enabled;
+        if self.shuffle_enabled {
+            self.repeat_track = false;
+            self.auto_queue.clear();
+            match shuffle_scope {
+                ShuffleScope::FullLibrary => {
+                    self.auto_queue
+                        .extend((0..tracks.len()).filter(|&index| Some(index) != self.current));
+                }
+                ShuffleScope::CurrentAlbum => {
+                    if let Some(album) = self.current.and_then(|current| {
+                        albums.iter().find(|album| album.tracks.contains(&current))
+                    }) {
+                        self.auto_queue.extend(
+                            album
+                                .tracks
+                                .iter()
+                                .copied()
+                                .filter(|&index| Some(index) != self.current),
+                        );
+                    }
+                }
+            }
+            self.shuffle_queue();
+            self.shuffle_queue_scope = Some(shuffle_scope);
+            if self.gapless_active {
+                self.rebuild_gapless(tracks);
+            }
+        } else {
+            self.shuffle_queue_scope = None;
+        }
+    }
+
+    /// Toggle whether the current track repeats at its end.
+    pub(crate) fn toggle_repeat_track(&mut self, tracks: &[Track]) {
+        self.repeat_track = !self.repeat_track;
+        if self.repeat_track {
+            self.shuffle_enabled = false;
+            self.shuffle_queue_scope = None;
+        }
+        if self.repeat_track && self.gapless_active {
+            self.rebuild_current(tracks);
+        }
+    }
+
+    fn shuffle_queue(&mut self) {
+        let mut seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos() as u64);
+        for index in (1..self.auto_queue.len()).rev() {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.auto_queue.swap(index, (seed as usize) % (index + 1));
+        }
+    }
+
+    /// Add a track to the end of the playback queue.
+    pub(crate) fn enqueue(&mut self, track_index: usize, tracks: &[Track]) {
+        self.manual_queue.push_back(track_index);
+        if self.gapless_active {
+            self.rebuild_gapless(tracks);
+        }
+    }
+
+    /// Remove a queued track and return it when the index exists.
+    pub(crate) fn remove_queued(&mut self, queue_index: usize, tracks: &[Track]) -> Option<usize> {
+        let removed = self.manual_queue.remove(queue_index);
+        if removed.is_some() && self.gapless_active {
+            self.rebuild_gapless(tracks);
+        }
+        removed
+    }
+
+    /// Move a queued track to a new position.
+    pub(crate) fn move_queued(&mut self, from: usize, to: usize, tracks: &[Track]) {
+        if from >= self.manual_queue.len() || to >= self.manual_queue.len() || from == to {
+            return;
+        }
+        if let Some(track) = self.manual_queue.remove(from) {
+            self.manual_queue.insert(to, track);
+            if self.gapless_active {
+                self.rebuild_gapless(tracks);
+            }
+        }
+    }
+
+    fn rebuild_gapless(&mut self, tracks: &[Track]) {
+        self.rebuild_current(tracks);
+        self.update_gapless(tracks, true);
+    }
+
+    fn rebuild_current(&mut self, tracks: &[Track]) {
+        let (Some(current), Some(player)) = (self.current, self.player.take()) else {
+            self.gapless_active = false;
+            return;
+        };
+        let position = player.get_pos();
+        let paused = self.paused;
+        player.clear();
+        self.gapless_active = false;
+        self.start_track_at(tracks, current, position);
+        if paused {
+            if let Some(player) = &self.player {
+                player.pause();
+                self.paused = true;
+                self.position = position;
+            }
+        }
+    }
+
     /// Skip the current track and start the next queued track, if one exists.
     ///
     /// # Arguments
     /// * `tracks` - Current library tracks.
-    pub fn skip_next(&mut self, tracks: &[Track]) {
-        if let Some(next) = self.queue.pop_front() {
+    /// * `albums` - Albums used to identify the current album shuffle range.
+    /// * `shuffle_scope` - Range from which the next track is selected.
+    pub fn skip_next(&mut self, tracks: &[Track], albums: &[Album], shuffle_scope: ShuffleScope) {
+        if self.repeat_track {
+            if let Some(current) = self.current {
+                self.stop_current();
+                self.start_track(tracks, current);
+            }
+            return;
+        }
+        if self.shuffle_enabled && self.shuffle_queue_scope != Some(shuffle_scope) {
+            self.auto_queue.clear();
+            match shuffle_scope {
+                ShuffleScope::FullLibrary => {
+                    self.auto_queue
+                        .extend((0..tracks.len()).filter(|&index| Some(index) != self.current));
+                }
+                ShuffleScope::CurrentAlbum => {
+                    if let Some(album) = self.current.and_then(|current| {
+                        albums.iter().find(|album| album.tracks.contains(&current))
+                    }) {
+                        self.auto_queue.extend(
+                            album
+                                .tracks
+                                .iter()
+                                .copied()
+                                .filter(|&index| Some(index) != self.current),
+                        );
+                    }
+                }
+            }
+            self.shuffle_queue();
+            self.shuffle_queue_scope = Some(shuffle_scope);
+            if self.gapless_active {
+                self.rebuild_gapless(tracks);
+            }
+        }
+        if let Some(next) = self.pop_next_queued_track() {
             if let Some(track) = self.current {
                 self.push_history(track);
             }
@@ -197,6 +513,13 @@ impl Playback {
     /// # Arguments
     /// * `tracks` - Current library tracks.
     pub fn previous(&mut self, tracks: &[Track]) {
+        if self.repeat_track {
+            if let Some(current) = self.current {
+                self.stop_current();
+                self.start_track(tracks, current);
+            }
+            return;
+        }
         let Some(previous) = self.history.pop_back() else {
             if let Some(current) = self.current {
                 self.stop_current();
@@ -205,7 +528,7 @@ impl Playback {
             return;
         };
         if let Some(current) = self.current {
-            self.queue.push_front(current);
+            self.auto_queue.push_front(current);
         }
         self.stop_current();
         self.start_track(tracks, previous);
@@ -214,8 +537,10 @@ impl Playback {
     /// Stop the active track and clear the queue and playback history.
     pub fn stop(&mut self) {
         self.stop_current();
-        self.queue.clear();
+        self.manual_queue.clear();
+        self.auto_queue.clear();
         self.history.clear();
+        self.shuffle_queue_scope = None;
     }
 
     /// Update stored track indexes after the library has been changed.
@@ -232,8 +557,13 @@ impl Playback {
                 }
             }
         }
-        self.queue = self
-            .queue
+        self.manual_queue = self
+            .manual_queue
+            .drain(..)
+            .filter_map(|index| remap.get(index).copied().flatten())
+            .collect();
+        self.auto_queue = self
+            .auto_queue
             .drain(..)
             .filter_map(|index| remap.get(index).copied().flatten())
             .collect();
@@ -263,6 +593,8 @@ impl Playback {
                     }
                 }
                 self.player = Some(player);
+                self.source_count = 1;
+                self.gapless_active = false;
                 self.current = Some(track_index);
                 self.position = position;
                 self.paused = false;
@@ -272,7 +604,8 @@ impl Playback {
                 self.current = None;
                 self.position = Duration::ZERO;
                 self.paused = false;
-                self.queue.clear();
+                self.manual_queue.clear();
+                self.auto_queue.clear();
                 self.error = Some(error);
             }
         }
@@ -286,6 +619,18 @@ impl Playback {
             self.output = Some(output);
         }
 
+        let decoder = self.open_decoder(path)?;
+        let player = Player::connect_new(
+            self.output
+                .as_ref()
+                .expect("audio output is initialized")
+                .mixer(),
+        );
+        player.append(decoder);
+        Ok(player)
+    }
+
+    fn open_decoder(&self, path: &Path) -> Result<Decoder<BufReader<File>>, String> {
         #[cfg(target_os = "linux")]
         let staged_path = if crate::features::library::smb::is_smb_path(path) {
             let auth = self.smb_auth.as_ref().ok_or_else(|| {
@@ -334,14 +679,7 @@ impl Playback {
             }
         };
         cleanup_staged();
-        let player = Player::connect_new(
-            self.output
-                .as_ref()
-                .expect("audio output is initialized")
-                .mixer(),
-        );
-        player.append(decoder);
-        Ok(player)
+        Ok(decoder)
     }
 
     fn stop_current(&mut self) {
@@ -349,6 +687,8 @@ impl Playback {
         self.current = None;
         self.position = Duration::ZERO;
         self.paused = false;
+        self.source_count = 0;
+        self.gapless_active = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -366,10 +706,16 @@ impl Default for Playback {
             error: None,
             output: None,
             player: None,
-            queue: VecDeque::new(),
+            manual_queue: VecDeque::new(),
+            auto_queue: VecDeque::new(),
             history: VecDeque::new(),
             position: Duration::ZERO,
             paused: false,
+            gapless_active: false,
+            source_count: 0,
+            shuffle_enabled: false,
+            shuffle_queue_scope: None,
+            repeat_track: false,
             volume: 70,
             #[cfg(target_os = "linux")]
             smb_auth: None,

@@ -13,8 +13,13 @@ pub(crate) fn show(
     context: &mut WorkbenchContext<'_>,
 ) -> Vec<WorkbenchAction> {
     let mut actions = Vec::with_capacity(2);
-    if shell::menu_bar::show(ctx, context.state, context.library, context.playback)
-        == Some(shell::menu_bar::MenuBarAction::ChooseMusicFolder)
+    if shell::menu_bar::show(
+        ctx,
+        context.state,
+        context.library,
+        context.playback,
+        context.settings,
+    ) == Some(shell::menu_bar::MenuBarAction::ChooseMusicFolder)
     {
         actions.push(WorkbenchAction::ChooseMusicFolder);
     }
@@ -37,6 +42,7 @@ pub(crate) fn show(
         context.state,
         context.preferences,
         context.settings,
+        context.library,
         context.error,
     ) {
         match action {
