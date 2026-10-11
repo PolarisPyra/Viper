@@ -2,7 +2,9 @@ use crate::platform::presence::discord::DiscordPresence;
 use crate::{
     features::library::artwork::ArtworkCache,
     features::playback::Playback,
-    features::{library::state::LibraryFeature, preferences::PreferencesState},
+    features::{
+        library::state::LibraryFeature, lyrics::LyricsFeature, preferences::PreferencesState,
+    },
     platform::persistence::settings::{Settings, StartupView},
     workbench::{Page, WorkbenchState},
 };
@@ -26,6 +28,7 @@ pub struct ViperApp {
     pub(crate) workbench: WorkbenchState,
     pub(crate) library: LibraryFeature,
     pub(crate) playback: Playback,
+    pub(crate) lyrics: LyricsFeature,
     pub(crate) settings: Settings,
     pub(crate) preferences: PreferencesState,
     discord_presence: DiscordPresence,
@@ -99,6 +102,7 @@ impl ViperApp {
             workbench: WorkbenchState::new(startup_page),
             library: LibraryFeature::new(random_sort_seed),
             playback,
+            lyrics: LyricsFeature::default(),
             settings,
             preferences,
             discord_presence: DiscordPresence::default(),

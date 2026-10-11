@@ -1,6 +1,7 @@
 use crate::{
     features::{
         library::{artwork::ArtworkCache, state::LibraryFeature},
+        lyrics::{Lyrics, LyricsFeature, LyricsResult},
         playback::Playback,
     },
     platform::persistence::settings::Settings,
@@ -10,12 +11,15 @@ use eframe::egui;
 
 const MIN_PANEL_WIDTH: f32 = 260.0;
 const MAX_PANEL_WIDTH: f32 = 520.0;
+const MIN_LYRICS_HEIGHT: f32 = 96.0;
+const DEFAULT_LYRICS_HEIGHT: f32 = 220.0;
 
 pub(crate) fn show(
     ctx: &egui::Context,
     workbench: &mut WorkbenchState,
     library_feature: &mut LibraryFeature,
     playback: &mut Playback,
+    lyrics: &mut LyricsFeature,
     settings: &mut Settings,
     artwork_cache: &mut ArtworkCache,
 ) -> Option<String> {
@@ -101,6 +105,14 @@ pub(crate) fn show(
                         album_index,
                         content_height,
                     );
+                    draw_lyrics_panel(
+                        ctx,
+                        ui,
+                        lyrics,
+                        library,
+                        playback.current,
+                        playback.position(),
+                    );
                 });
         });
 
@@ -123,6 +135,205 @@ pub(crate) fn show(
         save_error = save_settings(settings);
     }
     save_error
+}
+
+fn draw_lyrics_panel(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    lyrics: &mut LyricsFeature,
+    library: &crate::features::library::Library,
+    current_track: Option<usize>,
+    position: std::time::Duration,
+) {
+    let colors = crate::shared::ui::theme::colors(ctx);
+    let open_id = egui::Id::new("album-tracklist-lyrics-open");
+    let height_id = egui::Id::new("album-tracklist-lyrics-height");
+    let user_resized_id = egui::Id::new("album-tracklist-lyrics-user-resized");
+    let mut open = ctx
+        .data(|data| data.get_temp::<bool>(open_id))
+        .unwrap_or(false);
+    let mut height = ctx
+        .data(|data| data.get_temp::<f32>(height_id))
+        .unwrap_or(DEFAULT_LYRICS_HEIGHT);
+    let mut user_resized = ctx
+        .data(|data| data.get_temp::<bool>(user_resized_id))
+        .unwrap_or(false);
+    const TOGGLE_ROW_HEIGHT: f32 = 30.0;
+    const RESIZE_HANDLE_HEIGHT: f32 = 8.0;
+    let progress = ctx.animate_bool_with_time(open_id, open, 0.24);
+    let available_height = ui.available_height();
+    let max_lyrics_height =
+        (available_height - TOGGLE_ROW_HEIGHT - RESIZE_HANDLE_HEIGHT).max(MIN_LYRICS_HEIGHT);
+    if user_resized {
+        height = height.clamp(MIN_LYRICS_HEIGHT, max_lyrics_height);
+    } else {
+        height = max_lyrics_height;
+    }
+    let visible_height = height * progress;
+    let visible_handle_height = RESIZE_HANDLE_HEIGHT * progress;
+    let collapsed_spacer_height = (available_height - TOGGLE_ROW_HEIGHT).max(0.0);
+    let spacer_height = collapsed_spacer_height * (1.0 - progress);
+    ui.add_space(spacer_height);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), TOGGLE_ROW_HEIGHT),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| draw_lyrics_toggle(ui, &mut open),
+    );
+
+    if progress > 0.0 {
+        let (resize_rect, resize_response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), visible_handle_height),
+            egui::Sense::drag(),
+        );
+        ui.painter().line_segment(
+            [resize_rect.left_center(), resize_rect.right_center()],
+            egui::Stroke::new(2.0_f32, colors.border),
+        );
+        if resize_response.dragged() && open && progress >= 1.0 {
+            height = (height - resize_response.drag_delta().y)
+                .clamp(MIN_LYRICS_HEIGHT, max_lyrics_height);
+            user_resized = true;
+        }
+        let lyrics_result = current_track
+            .and_then(|index| library.tracks.get(index))
+            .map(|track| lyrics.request(ctx, track));
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), visible_height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.label(
+                    egui::RichText::new("LYRICS")
+                        .size(10.0)
+                        .strong()
+                        .color(colors.subtle),
+                );
+                ui.add_space(8.0);
+                draw_lyrics_content(ui, lyrics_result.as_ref(), position);
+            },
+        );
+    }
+    ctx.data_mut(|data| {
+        data.insert_temp(open_id, open);
+        data.insert_temp(height_id, height);
+        data.insert_temp(user_resized_id, user_resized);
+    });
+}
+
+fn draw_lyrics_content(
+    ui: &mut egui::Ui,
+    result: Option<&LyricsResult>,
+    position: std::time::Duration,
+) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    match result {
+        Some(LyricsResult::Found(lyrics)) => draw_lyrics_lines(ui, lyrics, position),
+        Some(LyricsResult::Loading) => {
+            ui.label(
+                egui::RichText::new("Fetching lyrics…")
+                    .size(12.0)
+                    .color(colors.muted),
+            );
+        }
+        Some(LyricsResult::Unavailable) => {
+            ui.label(
+                egui::RichText::new("Lyrics aren't available for this track.")
+                    .size(12.0)
+                    .color(colors.muted),
+            );
+        }
+        Some(LyricsResult::Failed(error)) => {
+            ui.label(
+                egui::RichText::new("Couldn't fetch lyrics.")
+                    .size(12.0)
+                    .color(colors.muted),
+            )
+            .on_hover_text(error);
+        }
+        None => {
+            ui.label(
+                egui::RichText::new("Play a track to see its lyrics.")
+                    .size(12.0)
+                    .color(colors.muted),
+            );
+        }
+    }
+}
+
+fn draw_lyrics_lines(ui: &mut egui::Ui, lyrics: &Lyrics, position: std::time::Duration) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    const ROW_HEIGHT: f32 = 20.0;
+    let active_line = lyrics.synced.then(|| {
+        lyrics
+            .lines
+            .partition_point(|line| line.timestamp.is_some_and(|time| time <= position))
+            .saturating_sub(1)
+    });
+    let scroll_height = ui.available_height();
+    egui::ScrollArea::vertical()
+        .id_salt("album-tracklist-lyrics-scroll")
+        .max_height(scroll_height)
+        .vertical_scroll_offset(
+            active_line
+                .map(|line| (line as f32 * ROW_HEIGHT - scroll_height * 0.45).max(0.0))
+                .unwrap_or(0.0),
+        )
+        .show_rows(ui, ROW_HEIGHT, lyrics.lines.len(), |ui, visible_rows| {
+            for index in visible_rows {
+                let Some(line) = lyrics.lines.get(index) else {
+                    continue;
+                };
+                let active = active_line == Some(index);
+                let text = egui::RichText::new(&line.text)
+                    .size(12.0)
+                    .color(if active { colors.accent } else { colors.muted })
+                    .strong();
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), ROW_HEIGHT),
+                    egui::Sense::hover(),
+                );
+                if active {
+                    ui.painter().rect_filled(rect, 3.0, colors.selected);
+                }
+                ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(egui::vec2(4.0, 0.0)))
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                )
+                .add(egui::Label::new(text).truncate());
+            }
+        });
+}
+
+fn draw_lyrics_toggle(ui: &mut egui::Ui, open: &mut bool) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::click());
+    draw_action_hover(ui, rect, response.hovered());
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        if *open {
+            egui_phosphor::regular::CARET_DOWN
+        } else {
+            egui_phosphor::regular::CARET_UP
+        },
+        egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
+        if response.hovered() {
+            colors.text
+        } else {
+            colors.muted
+        },
+    );
+    let text_response = ui.add(
+        egui::Label::new(
+            egui::RichText::new("View Lyrics")
+                .size(11.0)
+                .color(colors.muted),
+        )
+        .sense(egui::Sense::click()),
+    );
+    if response.on_hover_text("View Lyrics").clicked() || text_response.clicked() {
+        *open = !*open;
+    }
 }
 
 fn draw_track_panel_background(ui: &egui::Ui) {
@@ -374,11 +585,33 @@ fn show_tracks(
             .hover_pos()
             .is_some_and(|position| viewport.contains(position))
     });
+    let lyrics_open = ctx
+        .data(|data| data.get_temp::<bool>(egui::Id::new("album-tracklist-lyrics-open")))
+        .unwrap_or(false);
+    let lyrics_height = if lyrics_open {
+        let user_resized = ctx
+            .data(|data| {
+                data.get_temp::<bool>(egui::Id::new("album-tracklist-lyrics-user-resized"))
+            })
+            .unwrap_or(false);
+        if user_resized {
+            ctx.data(|data| data.get_temp::<f32>(egui::Id::new("album-tracklist-lyrics-height")))
+                .unwrap_or(DEFAULT_LYRICS_HEIGHT)
+        } else {
+            DEFAULT_LYRICS_HEIGHT
+        }
+    } else {
+        0.0
+    };
+    let max_track_list_height = (content_height - 190.0 - lyrics_height).max(100.0);
+    let track_list_height = ((album.tracks.len() as f32 * 50.0) + 30.0)
+        .min(max_track_list_height)
+        .max(100.0);
     egui::ScrollArea::vertical()
         .id_salt("album-popout-tracks")
         .drag_to_scroll(false)
         .enable_scrolling(pointer_inside)
-        .max_height((content_height - 190.0).max(100.0))
+        .max_height(track_list_height)
         .show(ui, |ui| {
             ui.add_space(12.0);
             for (position, &track_index) in album.tracks.iter().enumerate() {

@@ -85,6 +85,7 @@ impl eframe::App for ViperApp {
                 state: &mut self.workbench,
                 library: &mut self.library,
                 playback: &mut self.playback,
+                lyrics: &mut self.lyrics,
                 settings: &mut self.settings,
                 preferences: &mut self.preferences,
                 artwork_cache: &mut self.artwork_cache,

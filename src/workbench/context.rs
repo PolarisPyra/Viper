@@ -1,6 +1,7 @@
 use crate::{
     features::{
         library::{artwork::ArtworkCache, state::LibraryFeature},
+        lyrics::LyricsFeature,
         playback::Playback,
         preferences::PreferencesState,
     },
@@ -13,6 +14,7 @@ pub(crate) struct WorkbenchContext<'a> {
     pub(crate) state: &'a mut WorkbenchState,
     pub(crate) library: &'a mut LibraryFeature,
     pub(crate) playback: &'a mut Playback,
+    pub(crate) lyrics: &'a mut LyricsFeature,
     pub(crate) settings: &'a mut Settings,
     pub(crate) preferences: &'a mut PreferencesState,
     pub(crate) artwork_cache: &'a mut ArtworkCache,

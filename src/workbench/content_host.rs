@@ -24,6 +24,7 @@ pub(crate) fn show(
                 context.state,
                 context.library,
                 context.playback,
+                context.lyrics,
                 context.settings,
                 context.artwork_cache,
             ) {
