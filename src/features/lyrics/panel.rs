@@ -243,41 +243,59 @@ fn draw_lyrics_lines(
         && !is_resizing(ui.ctx());
     ui.ctx()
         .data_mut(|data| data.insert_temp(follow_line_id, (current_track, active_line)));
-    let mut scroll_area = egui::ScrollArea::vertical()
+    egui::ScrollArea::vertical()
         .id_salt("album-tracklist-lyrics-scroll")
         .auto_shrink([false, false])
-        .max_height(scroll_height);
-    if should_follow {
-        if let Some(line) = active_line {
-            let offset = (line as f32 * ROW_HEIGHT - scroll_height * 0.45).max(0.0);
-            scroll_area = scroll_area.vertical_scroll_offset(offset);
-        }
-    }
-    scroll_area.show_rows(ui, ROW_HEIGHT, lyrics.lines.len(), |ui, visible_rows| {
-        for index in visible_rows {
-            let Some(line) = lyrics.lines.get(index) else {
-                continue;
-            };
-            let active = active_line == Some(index);
-            let text = egui::RichText::new(&line.text)
-                .size(12.0)
-                .color(if active { colors.accent } else { colors.muted })
-                .strong();
-            let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), ROW_HEIGHT),
-                egui::Sense::hover(),
-            );
-            if active {
-                ui.painter().rect_filled(rect, 3.0, colors.selected);
+        .max_height(scroll_height)
+        .show_rows(ui, ROW_HEIGHT, lyrics.lines.len(), |ui, visible_rows| {
+            if should_follow {
+                if let Some(active_line) = active_line {
+                    let row_step = ROW_HEIGHT + ui.spacing().item_spacing.y;
+                    let content_top = ui.max_rect().top() - visible_rows.start as f32 * row_step;
+                    let active_top = content_top + active_line as f32 * row_step;
+                    let active_rect = egui::Rect::from_min_size(
+                        egui::pos2(ui.max_rect().left(), active_top),
+                        egui::vec2(ui.available_width(), ROW_HEIGHT),
+                    );
+                    let viewport = ui.clip_rect();
+                    if active_rect.top() < viewport.top()
+                        || active_rect.bottom() > viewport.bottom()
+                    {
+                        ui.scroll_to_rect_animation(
+                            active_rect,
+                            None,
+                            egui::style::ScrollAnimation::new(
+                                420.0,
+                                egui::emath::Rangef::new(0.24, 0.48),
+                            ),
+                        );
+                    }
+                }
             }
-            ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect.shrink2(egui::vec2(4.0, 0.0)))
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-            )
-            .add(egui::Label::new(text).truncate());
-        }
-    });
+            for index in visible_rows {
+                let Some(line) = lyrics.lines.get(index) else {
+                    continue;
+                };
+                let active = active_line == Some(index);
+                let text = egui::RichText::new(&line.text)
+                    .size(12.0)
+                    .color(if active { colors.accent } else { colors.muted })
+                    .strong();
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), ROW_HEIGHT),
+                    egui::Sense::hover(),
+                );
+                if active {
+                    ui.painter().rect_filled(rect, 3.0, colors.selected);
+                }
+                ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(egui::vec2(4.0, 0.0)))
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                )
+                .add(egui::Label::new(text).truncate());
+            }
+        });
 }
 
 fn draw_lyrics_toggle(ui: &mut egui::Ui, open: &mut bool) {
