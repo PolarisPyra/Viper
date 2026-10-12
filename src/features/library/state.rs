@@ -66,7 +66,6 @@ impl LibraryFeature {
         self.background.clear_watch_state();
         self.model = Library::default();
         self.view.album_filter_dirty = true;
-        self.view.album_appearance_epoch = self.view.album_appearance_epoch.wrapping_add(1);
         self.view.selected_album = None;
         self.scanning = true;
         match self.background.start_scan(
@@ -185,7 +184,6 @@ pub(crate) struct LibraryViewState {
     pub(crate) filtered_albums: Arc<Vec<usize>>,
     pub(crate) album_filter_dirty: bool,
     pub(crate) random_sort_seed: u64,
-    pub(crate) album_appearance_epoch: u64,
 }
 
 impl LibraryViewState {
@@ -199,7 +197,6 @@ impl LibraryViewState {
             filtered_albums: Arc::new(Vec::new()),
             album_filter_dirty: true,
             random_sort_seed,
-            album_appearance_epoch: 0,
         }
     }
 }

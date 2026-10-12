@@ -1,16 +1,12 @@
 use eframe::egui;
 
-use super::{
-    open_album, paint_cover_with_opacity, show_cover_placeholder_with_opacity, show_shimmer_rect,
-    AlbumScreen,
-};
+use super::{open_album, paint_cover_with_opacity, show_shimmer_rect, AlbumScreen};
 
 pub(super) fn show_album_rows(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
     screen: &mut AlbumScreen<'_>,
     albums: &[usize],
-    page_start: usize,
     viewport: egui::Rect,
     width: f32,
 ) {
@@ -20,7 +16,6 @@ pub(super) fn show_album_rows(
     let row_height = art_size + 81.0;
     let row_step = row_height + ROW_GAP;
     let rows = albums.len().div_ceil(columns);
-    let entry_opacity = screen.album_entry_opacity(ctx, page_start);
     let content = ui.max_rect();
     ui.set_height(TOP_PADDING + rows as f32 * row_step);
     let first = (((viewport.min.y - TOP_PADDING).max(0.0) / row_step).floor() as usize).min(rows);
@@ -48,7 +43,6 @@ pub(super) fn show_album_rows(
                 &mut row_ui,
                 screen,
                 album_index,
-                entry_opacity,
                 card_width,
                 art_size,
                 row_height,
@@ -62,7 +56,6 @@ fn show_album_card(
     ui: &mut egui::Ui,
     screen: &mut AlbumScreen<'_>,
     index: usize,
-    entry_opacity: f32,
     card_width: f32,
     art_size: f32,
     card_height: f32,
@@ -81,7 +74,7 @@ fn show_album_card(
         |ui| {
             egui::Frame::new()
                 .fill(if selected {
-                    colors.selected.gamma_multiply(entry_opacity)
+                    colors.selected
                 } else {
                     egui::Color32::TRANSPARENT
                 })
@@ -91,15 +84,18 @@ fn show_album_card(
                     let art = ui.allocate_space(egui::vec2(art_size, art_size)).1;
                     if ui.is_rect_visible(art) {
                         if let Some(cover) = &cover {
-                            paint_cover_with_opacity(ui, cover, art, cover_opacity * entry_opacity);
+                            if cover_opacity < 1.0 {
+                                show_shimmer_rect(ui, art, 8.0);
+                            }
+                            paint_cover_with_opacity(ui, cover, art, cover_opacity);
                         } else {
-                            show_cover_placeholder_with_opacity(ui, art, 8.0, entry_opacity);
+                            show_shimmer_rect(ui, art, 8.0);
                             ui.painter().text(
                                 art.center(),
                                 egui::Align2::CENTER_CENTER,
                                 egui_phosphor::regular::DISC,
                                 egui::FontId::new(32.0, egui::FontFamily::Name("phosphor".into())),
-                                colors.muted.gamma_multiply(entry_opacity),
+                                colors.muted,
                             );
                         }
                     }
@@ -107,7 +103,7 @@ fn show_album_card(
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&album.title)
-                                .color(colors.text.gamma_multiply(entry_opacity))
+                                .color(colors.text)
                                 .size(14.0),
                         )
                         .truncate(),
@@ -119,7 +115,7 @@ fn show_album_card(
                                 album.artist,
                                 album.tracks.len()
                             ))
-                            .color(colors.muted.gamma_multiply(entry_opacity))
+                            .color(colors.muted)
                             .size(12.0),
                         )
                         .truncate(),
@@ -151,14 +147,6 @@ pub(super) fn show_skeleton_albums(ctx: &egui::Context, ui: &mut egui::Ui, width
                             .show(ui, |ui| {
                                 let art = ui.allocate_space(egui::vec2(art_size, art_size)).1;
                                 show_shimmer_rect(ui, art, 8.0);
-                                ui.add_space(10.0);
-                                let title = ui
-                                    .allocate_space(egui::vec2((card_width - 12.0).max(24.0), 12.0))
-                                    .1;
-                                show_shimmer_rect(ui, title, 4.0);
-                                ui.add_space(7.0);
-                                let artist = ui.allocate_space(egui::vec2(82.0, 10.0)).1;
-                                show_shimmer_rect(ui, artist, 4.0);
                             });
                     },
                 );

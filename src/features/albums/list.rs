@@ -1,9 +1,6 @@
 use eframe::egui;
 
-use super::{
-    open_album, paint_cover_with_opacity, show_cover_placeholder_with_opacity, show_shimmer_rect,
-    AlbumScreen,
-};
+use super::{open_album, paint_cover_with_opacity, show_shimmer_rect, AlbumScreen};
 
 pub(super) fn show_header(ui: &mut egui::Ui, width: f32) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
@@ -39,7 +36,6 @@ pub(super) fn show_album_list(
     ui: &mut egui::Ui,
     screen: &mut AlbumScreen<'_>,
     albums: &[usize],
-    page_start: usize,
     viewport: egui::Rect,
     width: f32,
 ) {
@@ -53,7 +49,6 @@ pub(super) fn show_album_list(
     ui.set_height(rows as f32 * row_step);
     let first = ((viewport.min.y.max(0.0) / row_step).floor() as usize).min(rows);
     let last = ((viewport.max.y.max(0.0) / row_step).ceil() as usize + 1).min(rows);
-    let entry_opacity = screen.album_entry_opacity(ctx, page_start);
 
     for row in first..last {
         let album_index = albums[row];
@@ -72,9 +67,9 @@ pub(super) fn show_album_list(
                 rect.shrink2(egui::vec2(0.0, 2.0)),
                 0.0,
                 if selected {
-                    colors.selected.gamma_multiply(entry_opacity)
+                    colors.selected
                 } else {
-                    colors.hover.gamma_multiply(entry_opacity)
+                    colors.hover
                 },
             );
         }
@@ -89,15 +84,18 @@ pub(super) fn show_album_list(
             egui::vec2(56.0, 56.0),
         );
         if let Some(cover) = &cover {
-            paint_cover_with_opacity(ui, cover, cover_rect, cover_opacity * entry_opacity);
+            if cover_opacity < 1.0 {
+                show_shimmer_rect(ui, cover_rect, 6.0);
+            }
+            paint_cover_with_opacity(ui, cover, cover_rect, cover_opacity);
         } else {
-            show_cover_placeholder_with_opacity(ui, cover_rect, 6.0, entry_opacity);
+            show_shimmer_rect(ui, cover_rect, 6.0);
             ui.painter().text(
                 cover_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::DISC,
                 egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
-                colors.muted.gamma_multiply(entry_opacity),
+                colors.muted,
             );
         }
 
@@ -115,24 +113,9 @@ pub(super) fn show_album_list(
             .map_or_else(|| "—".to_owned(), |year| year.to_string());
 
         for (x, column_width, text, color) in [
-            (
-                title_x,
-                title_width,
-                album.title.as_str(),
-                colors.text.gamma_multiply(entry_opacity),
-            ),
-            (
-                artist_x,
-                artist_width,
-                album.artist.as_str(),
-                colors.muted.gamma_multiply(entry_opacity),
-            ),
-            (
-                date_x,
-                date_width,
-                year.as_str(),
-                colors.muted.gamma_multiply(entry_opacity),
-            ),
+            (title_x, title_width, album.title.as_str(), colors.text),
+            (artist_x, artist_width, album.artist.as_str(), colors.muted),
+            (date_x, date_width, year.as_str(), colors.muted),
         ] {
             let column_rect = egui::Rect::from_min_size(
                 egui::pos2(x, rect.top()),
@@ -148,7 +131,7 @@ pub(super) fn show_album_list(
         }
         ui.painter().line_segment(
             [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(1.0_f32, colors.border.gamma_multiply(entry_opacity)),
+            egui::Stroke::new(1.0_f32, colors.border),
         );
         if response.clicked() {
             open_album(ctx, screen, album_index);
@@ -165,16 +148,6 @@ pub(super) fn show_skeleton_list(ctx: &egui::Context, ui: &mut egui::Ui) {
             egui::Rect::from_min_size(row.min + egui::vec2(10.0, 8.0), egui::vec2(56.0, 56.0)),
             6.0,
         );
-        let title = egui::Rect::from_min_size(
-            row.min + egui::vec2(82.0, 12.0),
-            egui::vec2((row.width() * 0.35).max(100.0), 10.0),
-        );
-        show_shimmer_rect(ui, title, 4.0);
-        let artist = egui::Rect::from_min_size(
-            row.min + egui::vec2(row.width() * 0.53, 12.0),
-            egui::vec2((row.width() * 0.2).max(60.0), 10.0),
-        );
-        show_shimmer_rect(ui, artist, 4.0);
         ui.add_space(1.0);
     }
     ctx.request_repaint_after(std::time::Duration::from_millis(100));

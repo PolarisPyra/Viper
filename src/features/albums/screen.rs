@@ -33,28 +33,6 @@ impl AlbumScreen<'_> {
     pub(crate) fn album_texture_opacity(&self, ctx: &egui::Context, album_index: usize) -> f32 {
         self.artwork_cache.texture_opacity(ctx, album_index)
     }
-
-    pub(crate) fn album_entry_opacity(&self, ctx: &egui::Context, page_start: usize) -> f32 {
-        const ENTRY_FADE_DURATION: f64 = 0.42;
-        let animation_id = egui::Id::new((
-            "album-entry-start",
-            self.library.view.album_appearance_epoch,
-            page_start,
-        ));
-        let now = ctx.input(|input| input.time);
-        let started_at = ctx.data_mut(|data| {
-            data.get_temp::<f64>(animation_id).unwrap_or_else(|| {
-                data.insert_temp(animation_id, now);
-                now
-            })
-        });
-        let progress = ((now - started_at) / ENTRY_FADE_DURATION).clamp(0.0, 1.0);
-        if progress < 1.0 {
-            ctx.request_repaint();
-        }
-        let progress = progress as f32;
-        progress * progress * (3.0 - 2.0 * progress)
-    }
 }
 
 pub(crate) fn show(ctx: &egui::Context, mut screen: AlbumScreen<'_>) {
@@ -117,24 +95,12 @@ fn show_grid(
                 return;
             }
             match layout {
-                AlbumLayout::Grid => grid::show_album_rows(
-                    ctx,
-                    ui,
-                    screen,
-                    &albums[page.clone()],
-                    page.start,
-                    viewport,
-                    width,
-                ),
-                AlbumLayout::List => list::show_album_list(
-                    ctx,
-                    ui,
-                    screen,
-                    &albums[page.clone()],
-                    page.start,
-                    viewport,
-                    width,
-                ),
+                AlbumLayout::Grid => {
+                    grid::show_album_rows(ctx, ui, screen, &albums[page.clone()], viewport, width)
+                }
+                AlbumLayout::List => {
+                    list::show_album_list(ctx, ui, screen, &albums[page.clone()], viewport, width)
+                }
             }
         });
 }
@@ -196,25 +162,11 @@ pub(super) fn paint_cover_with_opacity(
 }
 
 pub(super) fn show_shimmer_rect(ui: &egui::Ui, rect: egui::Rect, radius: f32) {
-    show_shimmer_rect_with_opacity(ui, rect, radius, 1.0);
-}
-
-pub(super) fn show_cover_placeholder_with_opacity(
-    ui: &egui::Ui,
-    rect: egui::Rect,
-    radius: f32,
-    opacity: f32,
-) {
-    show_shimmer_rect_with_opacity(ui, rect, radius, opacity);
-}
-
-fn show_shimmer_rect_with_opacity(ui: &egui::Ui, rect: egui::Rect, radius: f32, opacity: f32) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     let time = ui.ctx().input(|input| input.time);
     let pulse = ((time * 1.8).sin() * 0.5 + 0.5) as f32;
     let base = colors.surface.lerp_to_gamma(colors.hover, pulse * 0.35);
-    ui.painter()
-        .rect_filled(rect, radius, base.gamma_multiply(opacity));
+    ui.painter().rect_filled(rect, radius, base);
 
     const SHIMMER_PERIOD: f32 = 1.5;
     const SHIMMER_SEGMENTS: usize = 12;
@@ -233,11 +185,7 @@ fn show_shimmer_rect_with_opacity(ui: &egui::Ui, rect: egui::Rect, radius: f32, 
             egui::pos2(left, rect.top()),
             egui::pos2(left + segment_width + 0.5, rect.bottom()),
         );
-        painter.rect_filled(
-            slice,
-            radius * 0.35,
-            highlight.linear_multiply(intensity * opacity),
-        );
+        painter.rect_filled(slice, radius * 0.35, highlight.linear_multiply(intensity));
     }
     ui.ctx()
         .request_repaint_after(std::time::Duration::from_millis(33));

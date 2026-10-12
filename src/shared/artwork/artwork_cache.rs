@@ -10,13 +10,15 @@ use std::{
 };
 
 const MAX_CACHED_ALBUM_TEXTURES: usize = 48;
-const COVER_FADE_DURATION: f64 = 0.22;
+const COVER_FADE_DURATION: f64 = 0.42;
 
 pub(crate) struct ArtworkCache {
     textures: HashMap<usize, egui::TextureHandle>,
-    texture_loaded_at: HashMap<usize, f64>,
     texture_lru: VecDeque<usize>,
     visible_texture_indices: HashSet<usize>,
+    previous_visible_texture_indices: HashSet<usize>,
+    visible_texture_set_changed: bool,
+    visible_fade_started_at: Option<f64>,
     texture_requests: HashSet<(usize, usize)>,
     texture_epoch: usize,
     texture_workers: Arc<AtomicUsize>,
@@ -29,9 +31,11 @@ impl ArtworkCache {
         let (texture_sender, texture_receiver) = mpsc::channel();
         Self {
             textures: HashMap::new(),
-            texture_loaded_at: HashMap::new(),
             texture_lru: VecDeque::new(),
             visible_texture_indices: HashSet::new(),
+            previous_visible_texture_indices: HashSet::new(),
+            visible_texture_set_changed: false,
+            visible_fade_started_at: None,
             texture_requests: HashSet::new(),
             texture_epoch: 0,
             texture_workers: Arc::new(AtomicUsize::new(0)),
@@ -44,13 +48,16 @@ impl ArtworkCache {
         self.texture_epoch = self.texture_epoch.wrapping_add(1);
         self.texture_requests.clear();
         self.textures.clear();
-        self.texture_loaded_at.clear();
         self.texture_lru.clear();
         self.visible_texture_indices.clear();
+        self.previous_visible_texture_indices.clear();
+        self.visible_texture_set_changed = false;
+        self.visible_fade_started_at = None;
     }
 
     pub(crate) fn begin_frame(&mut self) {
-        self.visible_texture_indices.clear();
+        self.previous_visible_texture_indices = std::mem::take(&mut self.visible_texture_indices);
+        self.visible_texture_set_changed = false;
     }
 
     pub(crate) fn texture(
@@ -60,6 +67,9 @@ impl ArtworkCache {
         bytes: &[u8],
     ) -> Option<egui::TextureHandle> {
         self.visible_texture_indices.insert(album_index);
+        if !self.previous_visible_texture_indices.contains(&album_index) {
+            self.visible_texture_set_changed = true;
+        }
         if let Some(texture) = self.textures.get(&album_index).cloned() {
             self.texture_lru.retain(|&index| index != album_index);
             self.texture_lru.push_back(album_index);
@@ -134,24 +144,45 @@ impl ArtworkCache {
                 };
                 if let Some(oldest) = self.texture_lru.remove(oldest_position) {
                     self.textures.remove(&oldest);
-                    self.texture_loaded_at.remove(&oldest);
                 }
             }
             self.textures.insert(album_index, texture);
-            self.texture_loaded_at
-                .insert(album_index, ctx.input(|input| input.time));
             self.texture_lru.push_back(album_index);
         }
     }
 
+    pub(crate) fn finish_frame(&mut self, ctx: &egui::Context) {
+        let all_visible_artwork_ready = !self.visible_texture_indices.is_empty()
+            && self
+                .visible_texture_indices
+                .iter()
+                .all(|index| self.textures.contains_key(index));
+        if !all_visible_artwork_ready {
+            self.visible_fade_started_at = None;
+            return;
+        }
+
+        if self.visible_texture_set_changed || self.visible_fade_started_at.is_none() {
+            self.visible_fade_started_at = Some(ctx.input(|input| input.time));
+            ctx.request_repaint();
+        }
+    }
+
     pub(crate) fn texture_opacity(&self, ctx: &egui::Context, album_index: usize) -> f32 {
-        let Some(&loaded_at) = self.texture_loaded_at.get(&album_index) else {
-            return 1.0;
+        let Some(fade_started_at) = self.visible_fade_started_at else {
+            return 0.0;
         };
-        let elapsed = (ctx.input(|input| input.time) - loaded_at).max(0.0);
+        if self.visible_texture_set_changed
+            || !self.previous_visible_texture_indices.contains(&album_index)
+        {
+            return 0.0;
+        }
+
+        let elapsed = (ctx.input(|input| input.time) - fade_started_at).max(0.0);
         if elapsed < COVER_FADE_DURATION {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
-        (elapsed / COVER_FADE_DURATION).clamp(0.0, 1.0) as f32
+        let progress = (elapsed / COVER_FADE_DURATION).clamp(0.0, 1.0) as f32;
+        progress * progress * (3.0 - 2.0 * progress)
     }
 }

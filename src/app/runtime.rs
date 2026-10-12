@@ -132,6 +132,7 @@ impl eframe::App for ViperApp {
             };
             crate::workbench::show(ctx, &mut context)
         };
+        self.artwork_cache.finish_frame(ctx);
         for action in actions {
             match action {
                 crate::workbench::WorkbenchAction::ChooseMusicFolder => self.choose_folder(),
