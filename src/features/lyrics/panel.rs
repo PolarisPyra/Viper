@@ -135,15 +135,31 @@ pub(crate) fn show(
         if is_resizing {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         }
-        let handle_color = if is_resizing {
-            colors.text
+        let handle_color = if resizing {
+            colors.accent
+        } else if resize_response.hovered() {
+            colors.muted
         } else {
             colors.border
         };
+        let separator_center = resize_rect.center() + egui::vec2(0.0, 4.0);
+        let handle_center = resize_rect.center() - egui::vec2(0.0, 4.0);
         ui.painter().line_segment(
-            [resize_rect.left_center(), resize_rect.right_center()],
-            egui::Stroke::new(if is_resizing { 2.0_f32 } else { 1.0_f32 }, handle_color),
+            [
+                egui::pos2(resize_rect.left(), separator_center.y),
+                egui::pos2(resize_rect.right(), separator_center.y),
+            ],
+            egui::Stroke::new(1.0_f32, colors.border),
         );
+        if is_resizing {
+            ui.painter().line_segment(
+                [
+                    handle_center - egui::vec2(10.0, 0.0),
+                    handle_center + egui::vec2(10.0, 0.0),
+                ],
+                egui::Stroke::new(if resizing { 2.0_f32 } else { 1.0_f32 }, handle_color),
+            );
+        }
         let lyrics_result = current_track
             .and_then(|index| library.tracks.get(index))
             .map(|track| lyrics.request(ctx, track));
