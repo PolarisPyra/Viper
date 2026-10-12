@@ -10,9 +10,11 @@ use std::{
 };
 
 const MAX_CACHED_ALBUM_TEXTURES: usize = 48;
+const COVER_FADE_DURATION: f64 = 0.22;
 
 pub(crate) struct ArtworkCache {
     textures: HashMap<usize, egui::TextureHandle>,
+    texture_loaded_at: HashMap<usize, f64>,
     texture_lru: VecDeque<usize>,
     visible_texture_indices: HashSet<usize>,
     texture_requests: HashSet<(usize, usize)>,
@@ -27,6 +29,7 @@ impl ArtworkCache {
         let (texture_sender, texture_receiver) = mpsc::channel();
         Self {
             textures: HashMap::new(),
+            texture_loaded_at: HashMap::new(),
             texture_lru: VecDeque::new(),
             visible_texture_indices: HashSet::new(),
             texture_requests: HashSet::new(),
@@ -41,6 +44,7 @@ impl ArtworkCache {
         self.texture_epoch = self.texture_epoch.wrapping_add(1);
         self.texture_requests.clear();
         self.textures.clear();
+        self.texture_loaded_at.clear();
         self.texture_lru.clear();
         self.visible_texture_indices.clear();
     }
@@ -130,10 +134,24 @@ impl ArtworkCache {
                 };
                 if let Some(oldest) = self.texture_lru.remove(oldest_position) {
                     self.textures.remove(&oldest);
+                    self.texture_loaded_at.remove(&oldest);
                 }
             }
             self.textures.insert(album_index, texture);
+            self.texture_loaded_at
+                .insert(album_index, ctx.input(|input| input.time));
             self.texture_lru.push_back(album_index);
         }
+    }
+
+    pub(crate) fn texture_opacity(&self, ctx: &egui::Context, album_index: usize) -> f32 {
+        let Some(&loaded_at) = self.texture_loaded_at.get(&album_index) else {
+            return 1.0;
+        };
+        let elapsed = (ctx.input(|input| input.time) - loaded_at).max(0.0);
+        if elapsed < COVER_FADE_DURATION {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
+        (elapsed / COVER_FADE_DURATION).clamp(0.0, 1.0) as f32
     }
 }

@@ -1,6 +1,9 @@
 use eframe::egui;
 
-use super::{open_album, paint_cover, AlbumScreen};
+use super::{
+    open_album, paint_cover_with_opacity, show_cover_placeholder_with_opacity, show_shimmer_rect,
+    AlbumScreen,
+};
 
 pub(super) fn show_header(ui: &mut egui::Ui, width: f32) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
@@ -36,6 +39,7 @@ pub(super) fn show_album_list(
     ui: &mut egui::Ui,
     screen: &mut AlbumScreen<'_>,
     albums: &[usize],
+    page_start: usize,
     viewport: egui::Rect,
     width: f32,
 ) {
@@ -49,6 +53,7 @@ pub(super) fn show_album_list(
     ui.set_height(rows as f32 * row_step);
     let first = ((viewport.min.y.max(0.0) / row_step).floor() as usize).min(rows);
     let last = ((viewport.max.y.max(0.0) / row_step).ceil() as usize + 1).min(rows);
+    let entry_opacity = screen.album_entry_opacity(ctx, page_start);
 
     for row in first..last {
         let album_index = albums[row];
@@ -67,14 +72,15 @@ pub(super) fn show_album_list(
                 rect.shrink2(egui::vec2(0.0, 2.0)),
                 0.0,
                 if selected {
-                    colors.selected
+                    colors.selected.gamma_multiply(entry_opacity)
                 } else {
-                    colors.hover
+                    colors.hover.gamma_multiply(entry_opacity)
                 },
             );
         }
 
         let cover = screen.album_texture(ctx, album_index);
+        let cover_opacity = screen.album_texture_opacity(ctx, album_index);
         let Some(album) = screen.library.model.albums.get(album_index) else {
             continue;
         };
@@ -83,15 +89,15 @@ pub(super) fn show_album_list(
             egui::vec2(56.0, 56.0),
         );
         if let Some(cover) = &cover {
-            paint_cover(ui, cover, cover_rect);
+            paint_cover_with_opacity(ui, cover, cover_rect, cover_opacity * entry_opacity);
         } else {
-            ui.painter().rect_filled(cover_rect, 6.0, colors.surface);
+            show_cover_placeholder_with_opacity(ui, cover_rect, 6.0, entry_opacity);
             ui.painter().text(
                 cover_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::DISC,
                 egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
-                colors.muted,
+                colors.muted.gamma_multiply(entry_opacity),
             );
         }
 
@@ -109,9 +115,24 @@ pub(super) fn show_album_list(
             .map_or_else(|| "—".to_owned(), |year| year.to_string());
 
         for (x, column_width, text, color) in [
-            (title_x, title_width, album.title.as_str(), colors.text),
-            (artist_x, artist_width, album.artist.as_str(), colors.muted),
-            (date_x, date_width, year.as_str(), colors.muted),
+            (
+                title_x,
+                title_width,
+                album.title.as_str(),
+                colors.text.gamma_multiply(entry_opacity),
+            ),
+            (
+                artist_x,
+                artist_width,
+                album.artist.as_str(),
+                colors.muted.gamma_multiply(entry_opacity),
+            ),
+            (
+                date_x,
+                date_width,
+                year.as_str(),
+                colors.muted.gamma_multiply(entry_opacity),
+            ),
         ] {
             let column_rect = egui::Rect::from_min_size(
                 egui::pos2(x, rect.top()),
@@ -127,7 +148,7 @@ pub(super) fn show_album_list(
         }
         ui.painter().line_segment(
             [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(1.0_f32, colors.border),
+            egui::Stroke::new(1.0_f32, colors.border.gamma_multiply(entry_opacity)),
         );
         if response.clicked() {
             open_album(ctx, screen, album_index);
@@ -136,28 +157,24 @@ pub(super) fn show_album_list(
 }
 
 pub(super) fn show_skeleton_list(ctx: &egui::Context, ui: &mut egui::Ui) {
-    let colors = crate::shared::ui::theme::colors(ui.ctx());
-    let pulse = ((ctx.input(|input| input.time) * 2.2).sin() * 0.5 + 0.5) as f32;
-    let cover_color = colors.surface.lerp_to_gamma(colors.hover, pulse);
-    let line_color = colors.hover.lerp_to_gamma(colors.border, pulse);
     for _ in 0..6 {
         let (row, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 72.0), egui::Sense::hover());
-        ui.painter().rect_filled(
+        show_shimmer_rect(
+            ui,
             egui::Rect::from_min_size(row.min + egui::vec2(10.0, 8.0), egui::vec2(56.0, 56.0)),
             6.0,
-            cover_color,
         );
         let title = egui::Rect::from_min_size(
             row.min + egui::vec2(82.0, 12.0),
             egui::vec2((row.width() * 0.35).max(100.0), 10.0),
         );
-        ui.painter().rect_filled(title, 4.0, line_color);
+        show_shimmer_rect(ui, title, 4.0);
         let artist = egui::Rect::from_min_size(
             row.min + egui::vec2(row.width() * 0.53, 12.0),
             egui::vec2((row.width() * 0.2).max(60.0), 10.0),
         );
-        ui.painter().rect_filled(artist, 4.0, line_color);
+        show_shimmer_rect(ui, artist, 4.0);
         ui.add_space(1.0);
     }
     ctx.request_repaint_after(std::time::Duration::from_millis(100));

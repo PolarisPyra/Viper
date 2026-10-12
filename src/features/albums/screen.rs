@@ -29,6 +29,32 @@ impl AlbumScreen<'_> {
         let bytes = self.library.model.albums.get(album_index)?.art.as_deref()?;
         self.artwork_cache.texture(ctx, album_index, bytes)
     }
+
+    pub(crate) fn album_texture_opacity(&self, ctx: &egui::Context, album_index: usize) -> f32 {
+        self.artwork_cache.texture_opacity(ctx, album_index)
+    }
+
+    pub(crate) fn album_entry_opacity(&self, ctx: &egui::Context, page_start: usize) -> f32 {
+        const ENTRY_FADE_DURATION: f64 = 0.42;
+        let animation_id = egui::Id::new((
+            "album-entry-start",
+            self.library.view.album_appearance_epoch,
+            page_start,
+        ));
+        let now = ctx.input(|input| input.time);
+        let started_at = ctx.data_mut(|data| {
+            data.get_temp::<f64>(animation_id).unwrap_or_else(|| {
+                data.insert_temp(animation_id, now);
+                now
+            })
+        });
+        let progress = ((now - started_at) / ENTRY_FADE_DURATION).clamp(0.0, 1.0);
+        if progress < 1.0 {
+            ctx.request_repaint();
+        }
+        let progress = progress as f32;
+        progress * progress * (3.0 - 2.0 * progress)
+    }
 }
 
 pub(crate) fn show(ctx: &egui::Context, mut screen: AlbumScreen<'_>) {
@@ -91,12 +117,24 @@ fn show_grid(
                 return;
             }
             match layout {
-                AlbumLayout::Grid => {
-                    grid::show_album_rows(ctx, ui, screen, &albums[page.clone()], viewport, width)
-                }
-                AlbumLayout::List => {
-                    list::show_album_list(ctx, ui, screen, &albums[page.clone()], viewport, width)
-                }
+                AlbumLayout::Grid => grid::show_album_rows(
+                    ctx,
+                    ui,
+                    screen,
+                    &albums[page.clone()],
+                    page.start,
+                    viewport,
+                    width,
+                ),
+                AlbumLayout::List => list::show_album_list(
+                    ctx,
+                    ui,
+                    screen,
+                    &albums[page.clone()],
+                    page.start,
+                    viewport,
+                    width,
+                ),
             }
         });
 }
@@ -143,11 +181,64 @@ pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, inde
     ctx.request_repaint();
 }
 
-pub(super) fn paint_cover(ui: &egui::Ui, texture: &egui::TextureHandle, rect: egui::Rect) {
+pub(super) fn paint_cover_with_opacity(
+    ui: &egui::Ui,
+    texture: &egui::TextureHandle,
+    rect: egui::Rect,
+    opacity: f32,
+) {
     ui.painter().image(
         texture.id(),
         rect,
         egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
+        egui::Color32::from_white_alpha((opacity.clamp(0.0, 1.0) * 255.0) as u8),
     );
+}
+
+pub(super) fn show_shimmer_rect(ui: &egui::Ui, rect: egui::Rect, radius: f32) {
+    show_shimmer_rect_with_opacity(ui, rect, radius, 1.0);
+}
+
+pub(super) fn show_cover_placeholder_with_opacity(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    radius: f32,
+    opacity: f32,
+) {
+    show_shimmer_rect_with_opacity(ui, rect, radius, opacity);
+}
+
+fn show_shimmer_rect_with_opacity(ui: &egui::Ui, rect: egui::Rect, radius: f32, opacity: f32) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let time = ui.ctx().input(|input| input.time);
+    let pulse = ((time * 1.8).sin() * 0.5 + 0.5) as f32;
+    let base = colors.surface.lerp_to_gamma(colors.hover, pulse * 0.35);
+    ui.painter()
+        .rect_filled(rect, radius, base.gamma_multiply(opacity));
+
+    const SHIMMER_PERIOD: f32 = 1.5;
+    const SHIMMER_SEGMENTS: usize = 12;
+    let phase = (time as f32 / SHIMMER_PERIOD).rem_euclid(1.0);
+    let eased_phase = phase * phase * (3.0 - 2.0 * phase);
+    let band_width = (rect.width() * 0.72).max(30.0);
+    let center = rect.right() + band_width * 0.5 - (rect.width() + band_width) * eased_phase;
+    let segment_width = band_width / SHIMMER_SEGMENTS as f32;
+    let highlight = colors.hover;
+    let painter = ui.painter().with_clip_rect(rect.shrink(1.0));
+    for segment in 0..SHIMMER_SEGMENTS {
+        let midpoint = (segment as f32 + 0.5) / SHIMMER_SEGMENTS as f32;
+        let intensity = (midpoint * std::f32::consts::PI).sin() * 0.24;
+        let left = center - band_width * 0.5 + segment as f32 * segment_width;
+        let slice = egui::Rect::from_min_max(
+            egui::pos2(left, rect.top()),
+            egui::pos2(left + segment_width + 0.5, rect.bottom()),
+        );
+        painter.rect_filled(
+            slice,
+            radius * 0.35,
+            highlight.linear_multiply(intensity * opacity),
+        );
+    }
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(33));
 }
