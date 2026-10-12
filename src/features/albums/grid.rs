@@ -84,6 +84,15 @@ fn show_album_card(
                     if ui.is_rect_visible(art) {
                         if let Some(cover) = &cover {
                             paint_cover(ui, cover, art);
+                        } else {
+                            ui.painter().rect_filled(art, 8.0, colors.surface);
+                            ui.painter().text(
+                                art.center(),
+                                egui::Align2::CENTER_CENTER,
+                                egui_phosphor::regular::DISC,
+                                egui::FontId::new(32.0, egui::FontFamily::Name("phosphor".into())),
+                                colors.muted,
+                            );
                         }
                     }
                     ui.add_space(9.0);

@@ -54,6 +54,11 @@ impl eframe::App for ViperApp {
         if self.poll_scan() {
             self.artwork_cache.clear();
         }
+        for (album_index, artwork) in self.library.background.poll_artwork(ctx) {
+            if let Some(album) = self.library.model.albums.get_mut(album_index) {
+                album.art = Some(artwork);
+            }
+        }
         self.poll_file_watcher(ctx);
         self.artwork_cache.poll(ctx);
         self.artwork_cache.begin_frame();

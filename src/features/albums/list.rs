@@ -84,6 +84,15 @@ pub(super) fn show_album_list(
         );
         if let Some(cover) = &cover {
             paint_cover(ui, cover, cover_rect);
+        } else {
+            ui.painter().rect_filled(cover_rect, 6.0, colors.surface);
+            ui.painter().text(
+                cover_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                egui_phosphor::regular::DISC,
+                egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
+                colors.muted,
+            );
         }
 
         let title_x = rect.left() + 82.0;

@@ -18,8 +18,8 @@ use std::{
 
 use super::tag_reader::read_metadata;
 
-fn load_track_artwork(track: &Track) -> Option<Vec<u8>> {
-    load_artwork(&track.path, |path| {
+pub(crate) fn load_track_artwork(path: &Path) -> Option<Vec<u8>> {
+    load_artwork(path, |path| {
         if let Ok(file) = lofty::read_from_path(path) {
             if let Some(bytes) = file
                 .primary_tag()
@@ -346,10 +346,10 @@ pub(crate) fn scan_library_with_auth(
                 ))
                 .cloned()
         } else {
-            load_track_artwork(&tracks[album_tracks[0]]).map(Arc::from)
+            None
         };
         #[cfg(not(target_os = "linux"))]
-        let art = load_track_artwork(&tracks[album_tracks[0]]).map(Arc::from);
+        let art = None;
         let album_index = albums.len();
         for track_index in &album_tracks {
             track_album[*track_index] = Some(super::model::AlbumIndex::new(album_index));
@@ -439,7 +439,7 @@ pub fn scan_added_tracks(paths: &[PathBuf], cancel: &AtomicBool) -> DiscoveredTr
             normalize_album_key(&track.album_artist),
         );
         if seen_album_art.insert(key.clone()) {
-            if let Some(art) = load_track_artwork(track) {
+            if let Some(art) = load_track_artwork(&track.path) {
                 album_art.insert(key, Arc::from(art));
             }
         }

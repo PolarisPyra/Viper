@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, TryRecvError},
+        mpsc::{self, Receiver, Sender, TryRecvError},
         Arc,
     },
     time::Instant,
@@ -18,6 +18,8 @@ use std::{
 pub(crate) struct LibraryBackgroundTasks {
     pub(crate) scan_receiver: Option<Receiver<Library>>,
     scan_cancel: Option<Arc<AtomicBool>>,
+    artwork_receiver: Option<Receiver<(usize, Arc<[u8]>)>>,
+    artwork_cancel: Option<Arc<AtomicBool>>,
     pub(crate) file_watcher: Option<FileWatcher>,
     pub(crate) pending_watch_paths: HashSet<PathBuf>,
     pub(crate) watch_debounce_until: Option<Instant>,
@@ -33,6 +35,61 @@ pub(crate) enum WatcherEvent {
 }
 
 impl LibraryBackgroundTasks {
+    pub(crate) fn start_artwork_scan(
+        &mut self,
+        paths: Vec<(usize, PathBuf)>,
+    ) -> Result<(), String> {
+        self.cancel_artwork_scan();
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let (sender, receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
+        std::thread::Builder::new()
+            .name("music-library-artwork".into())
+            .spawn(move || {
+                let worker_count =
+                    std::thread::available_parallelism().map_or(4, |count| count.get().min(8));
+                if let Ok(pool) = rayon::ThreadPoolBuilder::new()
+                    .num_threads(worker_count)
+                    .build()
+                {
+                    pool.install(|| load_artwork_paths(&paths, &worker_cancel, &sender));
+                } else {
+                    load_artwork_paths(&paths, &worker_cancel, &sender);
+                }
+            })
+            .map_err(|error| format!("Could not start album artwork loading: {error}"))?;
+        self.artwork_receiver = Some(receiver);
+        self.artwork_cancel = Some(cancel);
+        Ok(())
+    }
+
+    pub(crate) fn poll_artwork(&mut self, ctx: &egui::Context) -> Vec<(usize, Arc<[u8]>)> {
+        let mut artwork = Vec::new();
+        let mut finished = false;
+        if let Some(receiver) = &self.artwork_receiver {
+            loop {
+                match receiver.try_recv() {
+                    Ok(item) => artwork.push(item),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        finished = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if finished {
+            self.artwork_receiver = None;
+            self.artwork_cancel = None;
+        } else if self.artwork_receiver.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(80));
+        }
+        artwork
+    }
+
     pub(crate) fn poll_file_watcher(
         &mut self,
         root: Option<&Path>,
@@ -232,6 +289,7 @@ impl LibraryBackgroundTasks {
         if let Some(cancel) = self.watch_scan_cancel.take() {
             cancel.store(true, Ordering::Relaxed);
         }
+        self.cancel_artwork_scan();
     }
 
     pub(crate) fn clear_watch_state(&mut self) {
@@ -249,6 +307,30 @@ impl LibraryBackgroundTasks {
             cancel.store(true, Ordering::Relaxed);
         }
     }
+
+    pub(crate) fn cancel_artwork_scan(&mut self) {
+        if let Some(cancel) = self.artwork_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.artwork_receiver = None;
+    }
+}
+
+fn load_artwork_paths(
+    paths: &[(usize, PathBuf)],
+    cancel: &AtomicBool,
+    sender: &Sender<(usize, Arc<[u8]>)>,
+) {
+    use rayon::prelude::*;
+
+    paths.par_iter().for_each(|(album_index, path)| {
+        if cancel.load(Ordering::Relaxed) || path.to_string_lossy().starts_with("smb://") {
+            return;
+        }
+        if let Some(artwork) = super::scanner::load_track_artwork(path) {
+            let _ = sender.send((*album_index, Arc::from(artwork)));
+        }
+    });
 }
 
 use std::time::Duration;

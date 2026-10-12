@@ -62,6 +62,7 @@ impl LibraryFeature {
         root: PathBuf,
         #[cfg(target_os = "linux")] smb_auth: Option<super::smb::SmbAuth>,
     ) -> Result<(), String> {
+        self.background.cancel_artwork_scan();
         self.background.clear_watch_state();
         self.model = Library::default();
         self.view.album_filter_dirty = true;
@@ -88,6 +89,20 @@ impl LibraryFeature {
         self.scanning = false;
         match result {
             Ok(library) => {
+                let artwork_paths = library
+                    .albums
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, album)| album.art.is_none())
+                    .filter_map(|(album_index, album)| {
+                        let track_index = *album.tracks.first()?;
+                        let path = library.tracks.get(track_index)?.path.clone();
+                        Some((album_index, path))
+                    })
+                    .collect();
+                if let Err(error) = self.background.start_artwork_scan(artwork_paths) {
+                    eprintln!("{error}");
+                }
                 let warning = if let Some(error) = &library.scan_error {
                     Some(error.clone())
                 } else if library.unreadable_directories > 0 {
