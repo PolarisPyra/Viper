@@ -1,10 +1,9 @@
-use crate::{features::library::Track, platform::persistence::settings::Settings};
-use lofty::file::TaggedFileExt;
+use crate::{platform::persistence::settings::Settings, shared::artwork::prepare_cover};
 use std::{
     collections::hash_map::DefaultHasher,
     fs,
     hash::Hasher,
-    io::{self, Cursor, ErrorKind},
+    io::{self, ErrorKind},
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
     time::UNIX_EPOCH,
@@ -12,8 +11,11 @@ use std::{
 
 static ARTWORK_CACHE_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
-pub(crate) fn cover_for_track(track: &Track) -> Option<Vec<u8>> {
-    let folder = track.path.parent()?;
+pub(crate) fn load_artwork(
+    path: &Path,
+    embedded_art: impl FnOnce(&Path) -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
+    let folder = path.parent()?;
     find_cover_in(folder)
         .or_else(|| {
             if is_disc_directory(folder) {
@@ -22,33 +24,7 @@ pub(crate) fn cover_for_track(track: &Track) -> Option<Vec<u8>> {
                 None
             }
         })
-        .or_else(|| prepared_cover_for_track(&track.path))
-}
-
-fn extract_embedded_art(path: &Path) -> Option<Vec<u8>> {
-    if let Ok(file) = lofty::read_from_path(path) {
-        if let Some(bytes) = file
-            .primary_tag()
-            .or_else(|| file.first_tag())
-            .and_then(|tag| tag.pictures().first())
-            .map(|picture| picture.data().to_vec())
-        {
-            return Some(bytes);
-        }
-    }
-    let media = crate::features::library::symphonia::probe(path)?;
-    let cover_index = media
-        .visuals
-        .iter()
-        .position(|visual| {
-            visual.usage == Some(symphonia::core::meta::StandardVisualKey::FrontCover)
-        })
-        .unwrap_or(0);
-    media
-        .visuals
-        .into_iter()
-        .nth(cover_index)
-        .map(|visual| visual.data)
+        .or_else(|| prepared_cover_for_track(path, || embedded_art(path)))
 }
 
 fn is_disc_directory(path: &Path) -> bool {
@@ -86,7 +62,10 @@ fn find_cover_in(folder: &Path) -> Option<Vec<u8>> {
     .find_map(|name| prepared_cover_for_source(&folder.join(name)))
 }
 
-fn prepared_cover_for_track(path: &Path) -> Option<Vec<u8>> {
+fn prepared_cover_for_track(
+    path: &Path,
+    embedded_art: impl FnOnce() -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) => {
@@ -94,18 +73,18 @@ fn prepared_cover_for_track(path: &Path) -> Option<Vec<u8>> {
                 "Could not inspect audio file for artwork cache {}: {error}",
                 path.display()
             );
-            return extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes));
+            return embedded_art().and_then(|bytes| prepare_cover(&bytes));
         }
     };
     let cache_path = match artwork_cache_path(path, &metadata) {
         Ok(path) => path,
         Err(error) => {
             eprintln!("Could not locate album artwork cache: {error}");
-            return extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes));
+            return embedded_art().and_then(|bytes| prepare_cover(&bytes));
         }
     };
     read_or_create_prepared_cover(&cache_path, || {
-        extract_embedded_art(path).and_then(|bytes| prepare_cover(&bytes))
+        embedded_art().and_then(|bytes| prepare_cover(&bytes))
     })
 }
 
@@ -223,40 +202,4 @@ fn artwork_cache_path(source_path: &Path, metadata: &fs::Metadata) -> io::Result
         .with_file_name("cached")
         .join("jackets")
         .join(format!("{:016x}.img", hasher.finish())))
-}
-
-fn prepare_cover(bytes: &[u8]) -> Option<Vec<u8>> {
-    const MAX_COVER_EDGE: u32 = 320;
-    const MAX_SOURCE_EDGE: u32 = 4096;
-    let mut reader = image::ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?;
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(MAX_SOURCE_EDGE);
-    limits.max_image_height = Some(MAX_SOURCE_EDGE);
-    limits.max_alloc = Some(96 * 1024 * 1024);
-    reader.limits(limits);
-    let decoded = reader.decode().ok()?;
-    let thumbnail = decoded.thumbnail(MAX_COVER_EDGE, MAX_COVER_EDGE);
-    let mut output = Cursor::new(Vec::new());
-    if decoded.color().has_alpha() {
-        let rgba = thumbnail.to_rgba8();
-        if rgba.pixels().any(|pixel| pixel[3] != u8::MAX) {
-            image::DynamicImage::ImageRgba8(rgba)
-                .write_to(&mut output, image::ImageFormat::Png)
-                .ok()?;
-        } else {
-            let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
-            let rgb = image::DynamicImage::ImageRgb8(rgb);
-            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, 88)
-                .encode_image(&rgb)
-                .ok()?;
-        }
-    } else {
-        let rgb = image::DynamicImage::ImageRgb8(thumbnail.to_rgb8());
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, 88)
-            .encode_image(&rgb)
-            .ok()?;
-    }
-    Some(output.into_inner())
 }

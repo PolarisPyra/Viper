@@ -1,11 +1,11 @@
 use crate::platform::presence::discord::DiscordPresence;
 use crate::{
-    features::library::artwork::ArtworkCache,
     features::playback::Playback,
     features::{
         library::state::LibraryFeature, lyrics::LyricsFeature, preferences::PreferencesState,
     },
     platform::persistence::settings::{Settings, StartupView},
+    shared::artwork::ArtworkCache,
     workbench::{Page, WorkbenchState},
 };
 use anyhow::Context;

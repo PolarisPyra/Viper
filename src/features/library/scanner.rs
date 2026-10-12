@@ -1,8 +1,9 @@
 use super::{is_audio_path, normalize_album_key};
 use crate::features::library::{
-    artwork::cover_for_track, cache::TrackMetadataCache, Album, DiscoveredTracks, Library,
-    ScanProgress, Track,
+    cache::TrackMetadataCache, Album, DiscoveredTracks, Library, ScanProgress, Track,
 };
+use crate::shared::artwork::load_artwork;
+use lofty::file::TaggedFileExt;
 use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -16,6 +17,34 @@ use std::{
 };
 
 use super::tag_reader::read_metadata;
+
+fn load_track_artwork(track: &Track) -> Option<Vec<u8>> {
+    load_artwork(&track.path, |path| {
+        if let Ok(file) = lofty::read_from_path(path) {
+            if let Some(bytes) = file
+                .primary_tag()
+                .or_else(|| file.first_tag())
+                .and_then(|tag| tag.pictures().first())
+                .map(|picture| picture.data().to_vec())
+            {
+                return Some(bytes);
+            }
+        }
+        let media = super::symphonia::probe(path)?;
+        let cover_index = media
+            .visuals
+            .iter()
+            .position(|visual| {
+                visual.usage == Some(symphonia::core::meta::StandardVisualKey::FrontCover)
+            })
+            .unwrap_or(0);
+        media
+            .visuals
+            .into_iter()
+            .nth(cover_index)
+            .map(|visual| visual.data)
+    })
+}
 
 /// Scan a local or SMB library root and return its tracks and albums.
 ///
@@ -317,10 +346,10 @@ pub(crate) fn scan_library_with_auth(
                 ))
                 .cloned()
         } else {
-            cover_for_track(&tracks[album_tracks[0]]).map(Arc::from)
+            load_track_artwork(&tracks[album_tracks[0]]).map(Arc::from)
         };
         #[cfg(not(target_os = "linux"))]
-        let art = cover_for_track(&tracks[album_tracks[0]]).map(Arc::from);
+        let art = load_track_artwork(&tracks[album_tracks[0]]).map(Arc::from);
         let album_index = albums.len();
         for track_index in &album_tracks {
             track_album[*track_index] = Some(super::model::AlbumIndex::new(album_index));
@@ -410,7 +439,7 @@ pub fn scan_added_tracks(paths: &[PathBuf], cancel: &AtomicBool) -> DiscoveredTr
             normalize_album_key(&track.album_artist),
         );
         if seen_album_art.insert(key.clone()) {
-            if let Some(art) = cover_for_track(track) {
+            if let Some(art) = load_track_artwork(track) {
                 album_art.insert(key, Arc::from(art));
             }
         }

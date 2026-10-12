@@ -1,9 +1,6 @@
+use crate::shared::artwork::ArtworkCache;
 use crate::{
-    features::{
-        library::{artwork::ArtworkCache, state::LibraryFeature},
-        lyrics::LyricsFeature,
-        playback::Playback,
-    },
+    features::{library::state::LibraryFeature, lyrics::LyricsFeature, playback::Playback},
     platform::persistence::settings::Settings,
     workbench::WorkbenchState,
 };

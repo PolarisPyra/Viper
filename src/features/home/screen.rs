@@ -1,6 +1,7 @@
+use crate::shared::artwork::ArtworkCache;
 use crate::{
     features::{
-        library::{artwork::ArtworkCache, sorting::album_sort_key, state::LibraryFeature, Album},
+        library::{sorting::album_sort_key, state::LibraryFeature, Album},
         playback::Playback,
     },
     platform::persistence::settings::Settings,

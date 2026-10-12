@@ -1,3 +1,4 @@
+use super::decode_album_art;
 use eframe::egui;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -135,26 +136,4 @@ impl ArtworkCache {
             self.texture_lru.push_back(album_index);
         }
     }
-}
-
-fn decode_album_art(bytes: &[u8]) -> Option<egui::ColorImage> {
-    match image::load_from_memory(bytes) {
-        Ok(image) => Some(color_image(image.resize(
-            512,
-            512,
-            image::imageops::FilterType::Lanczos3,
-        ))),
-        Err(error) => {
-            eprintln!("Could not decode album artwork: {error}");
-            None
-        }
-    }
-}
-
-fn color_image(image: image::DynamicImage) -> egui::ColorImage {
-    let image = image.into_rgba8();
-    egui::ColorImage::from_rgba_unmultiplied(
-        [image.width() as usize, image.height() as usize],
-        image.as_raw(),
-    )
 }

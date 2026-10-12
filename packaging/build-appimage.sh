@@ -33,6 +33,6 @@ APPIMAGE_EXTRACT_AND_RUN=1 "$linuxdeploy" \
     --appdir "$appdir" \
     --executable "$repo_root/target/release/viper" \
     --desktop-file "$repo_root/packaging/viper.desktop" \
-    --icon-file "$repo_root/assets/viper.png" \
+    --icon-file "$repo_root/assets/logo.png" \
     --output appimage
 printf 'Built %s\n' "$output"

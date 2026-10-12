@@ -1,8 +1,7 @@
+use crate::shared::artwork::ArtworkCache;
 use crate::{
     features::{
-        library::{artwork::ArtworkCache, state::LibraryFeature},
-        lyrics::LyricsFeature,
-        playback::Playback,
+        library::state::LibraryFeature, lyrics::LyricsFeature, playback::Playback,
         preferences::PreferencesState,
     },
     platform::persistence::settings::Settings,
