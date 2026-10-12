@@ -18,11 +18,23 @@ impl eframe::App for ViperApp {
             style.spacing.scroll.interact_background_opacity = 0.0;
         });
         ctx.style_mut(|style| style.interaction.selectable_labels = false);
+        let popup_open = ctx.memory(|memory| memory.any_popup_open());
         let escape_pressed = !self.workbench.show_preferences
-            && self.workbench.show_album_details
+            && (popup_open
+                || self.workbench.show_queue
+                || self.workbench.show_shortcuts
+                || self.workbench.show_album_details)
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if escape_pressed {
-            self.workbench.show_album_details = false;
+            if popup_open {
+                ctx.memory_mut(|memory| memory.close_popup());
+            } else if self.workbench.show_shortcuts {
+                self.workbench.show_shortcuts = false;
+            } else if self.workbench.show_queue {
+                self.workbench.show_queue = false;
+            } else {
+                self.workbench.show_album_details = false;
+            }
         }
         let search_pressed = !self.workbench.show_preferences
             && !self.workbench.show_shortcuts
