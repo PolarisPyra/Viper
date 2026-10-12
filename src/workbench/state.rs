@@ -9,6 +9,7 @@ pub(crate) struct WorkbenchState {
     pub(crate) show_preferences: bool,
     pub(crate) show_album_details: bool,
     pub(crate) show_queue: bool,
+    pub(crate) show_shortcuts: bool,
 }
 
 impl WorkbenchState {
@@ -18,6 +19,7 @@ impl WorkbenchState {
             show_preferences: false,
             show_album_details: false,
             show_queue: false,
+            show_shortcuts: false,
         }
     }
 }

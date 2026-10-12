@@ -110,7 +110,7 @@ pub(crate) fn show(
                             layout_changed = Some(layout);
                         }
                     }
-                    ui.add_space(ui.spacing().item_spacing.x);
+                    ui.add_space(18.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(220.0, 32.0),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -141,18 +141,32 @@ pub(crate) fn show(
                                                 ),
                                                 colors.text,
                                             );
-                                            ui.add(
+                                            let search = ui.add(
                                                 egui::TextEdit::singleline(
                                                     &mut library_view.search,
                                                 )
+                                                .id(egui::Id::new("library-search-field"))
                                                 .text_color(colors.text)
                                                 .hint_text(
-                                                    egui::RichText::new("Search albums")
+                                                    egui::RichText::new("Search")
                                                         .color(colors.text),
                                                 )
-                                                .desired_width(170.0)
+                                                .desired_width(122.0)
                                                 .frame(false),
                                             );
+                                            search.on_hover_text("Search (F)");
+                                            ui.add_space(4.0);
+                                            egui::Frame::new()
+                                                .fill(colors.canvas)
+                                                .corner_radius(4.0)
+                                                .inner_margin(egui::Margin::symmetric(5, 2))
+                                                .show(ui, |ui| {
+                                                    ui.label(
+                                                        egui::RichText::new("F")
+                                                            .size(10.0)
+                                                            .color(colors.muted),
+                                                    );
+                                                });
                                         },
                                     );
                                 });

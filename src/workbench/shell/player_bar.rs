@@ -2,6 +2,7 @@ use crate::shared::artwork::ArtworkCache;
 use crate::{
     features::{library::state::LibraryFeature, playback::Playback},
     platform::persistence::settings::Settings,
+    workbench::WorkbenchState,
 };
 use eframe::egui;
 use egui::emath::GuiRounding;
@@ -12,6 +13,7 @@ const TRACK_ART_SIZE: f32 = 68.0;
 
 pub(in crate::workbench) fn show(
     ctx: &egui::Context,
+    workbench: &mut WorkbenchState,
     playback: &mut Playback,
     library: &LibraryFeature,
     settings: &mut Settings,
@@ -219,9 +221,25 @@ pub(in crate::workbench) fn show(
             }
 
             let volume_area = egui::Rect::from_min_size(
-                egui::pos2(row_rect.right() - 176.0, row_rect.center().y - 15.0),
+                egui::pos2(row_rect.right() - 226.0, row_rect.center().y - 15.0),
                 egui::vec2(176.0, 30.0),
             );
+            let queue_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.right() - 24.0, row_rect.center().y),
+                egui::vec2(34.0, 38.0),
+            );
+            let queue = transport_icon_button(
+                ui,
+                queue_rect,
+                "player-queue",
+                egui_phosphor::regular::QUEUE,
+                "Queue",
+                workbench.show_queue,
+                true,
+            );
+            if queue.clicked() {
+                workbench.show_queue = !workbench.show_queue;
+            }
             let audio_info = current
                 .and_then(|index| library.model.tracks.get(index).map(|track| (index, track)))
                 .map(|(index, track)| {
@@ -304,7 +322,6 @@ pub(in crate::workbench) fn show(
             let position = playback.position();
             let mut seconds = position.as_secs_f64();
             let max_seconds = duration.map_or(0.0, |duration| duration.as_secs_f64());
-            let mut percentage_text_left = row_rect.left();
             ui.horizontal(|ui| {
                 let (position_label, _) =
                     ui.allocate_exact_size(egui::vec2(38.0, 14.0), egui::Sense::hover());
@@ -362,7 +379,6 @@ pub(in crate::workbench) fn show(
 
                 let (duration_label, _) =
                     ui.allocate_exact_size(egui::vec2(38.0, 14.0), egui::Sense::hover());
-                percentage_text_left = duration_label.left();
                 ui.painter().text(
                     egui::pos2(duration_label.left(), duration_label.center().y),
                     egui::Align2::LEFT_CENTER,
@@ -372,8 +388,8 @@ pub(in crate::workbench) fn show(
                 );
             });
             ui.painter().text(
-                egui::pos2(percentage_text_left, volume_area.center().y),
-                egui::Align2::LEFT_CENTER,
+                egui::pos2(volume_area.right() - 24.0, volume_area.center().y),
+                egui::Align2::CENTER_CENTER,
                 format!("{}%", settings.volume),
                 egui::FontId::proportional(11.0),
                 colors.muted,

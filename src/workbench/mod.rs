@@ -25,6 +25,7 @@ pub(crate) fn show(
     }
     shell::player_bar::show(
         ctx,
+        context.state,
         context.playback,
         context.library,
         context.settings,

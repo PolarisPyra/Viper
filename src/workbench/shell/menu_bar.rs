@@ -217,6 +217,16 @@ pub(in crate::workbench) fn show(
                                 }
                             },
                         );
+                        ui.menu_button(
+                            egui::RichText::new("Help").size(12.0).color(colors.muted),
+                            |ui| {
+                                style_menu_popup(ui);
+                                if menu_item(ui, "Keyboard Shortcuts").clicked() {
+                                    workbench.show_shortcuts = true;
+                                    ui.close_menu();
+                                }
+                            },
+                        );
                     });
                 },
             );
@@ -224,7 +234,89 @@ pub(in crate::workbench) fn show(
 
     ctx.set_style(original_style);
     show_queue_popup(ctx, workbench, playback, library);
+    show_shortcuts_popup(ctx, workbench);
     action
+}
+
+fn show_shortcuts_popup(ctx: &egui::Context, workbench: &mut WorkbenchState) {
+    if !workbench.show_shortcuts {
+        return;
+    }
+
+    let colors = crate::shared::ui::theme::colors(ctx);
+    let mut close_requested = false;
+    let response = egui::Modal::new(egui::Id::new("keyboard-shortcuts-modal"))
+        .frame(
+            egui::Frame::new()
+                .fill(colors.panel)
+                .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                .corner_radius(14.0)
+                .inner_margin(egui::Margin::symmetric(18, 18)),
+        )
+        .backdrop_color(colors.backdrop)
+        .show(ctx, |ui| {
+            ui.set_min_width(360.0);
+            ui.set_max_width(420.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Keyboard Shortcuts")
+                        .size(22.0)
+                        .strong()
+                        .color(colors.text),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click());
+                    if response.hovered() {
+                        ui.painter().rect_filled(rect, 8.0, colors.hover);
+                    }
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        egui_phosphor::regular::X,
+                        egui::FontId::new(16.0, egui::FontFamily::Name("phosphor".into())),
+                        if response.hovered() {
+                            colors.text
+                        } else {
+                            colors.muted
+                        },
+                    );
+                    if response.on_hover_text("Close keyboard shortcuts").clicked() {
+                        close_requested = true;
+                    }
+                });
+            });
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            let shortcuts = [
+                ("F", "Focus search"),
+                ("Q", "Show or hide queue"),
+                ("Space", "Play or pause"),
+                ("Esc", "Close album details"),
+            ];
+            for (shortcut, description) in shortcuts {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(description).color(colors.text));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        egui::Frame::new()
+                            .fill(colors.canvas)
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::symmetric(7, 3))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(shortcut).size(11.0).color(colors.muted),
+                                );
+                            });
+                    });
+                });
+                ui.add_space(5.0);
+            }
+        });
+
+    if close_requested || response.should_close() {
+        workbench.show_shortcuts = false;
+    }
 }
 
 fn show_queue_popup(
