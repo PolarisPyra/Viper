@@ -12,7 +12,14 @@ const MAX_WIDTH: f32 = 360.0;
 #[derive(Clone, Copy)]
 struct ResizeState {
     compact: bool,
-    pending_save: bool,
+    width: f32,
+    drag_start: Option<DragStart>,
+}
+
+#[derive(Clone, Copy)]
+struct DragStart {
+    pointer_x: f32,
+    width: f32,
 }
 
 pub(in crate::workbench) fn show(
@@ -28,32 +35,41 @@ pub(in crate::workbench) fn show(
         .data(|data| data.get_temp::<ResizeState>(resize_state_id))
         .unwrap_or(ResizeState {
             compact: settings.compact_sidebar,
-            pending_save: false,
+            width: if settings.compact_sidebar {
+                COMPACT_WIDTH
+            } else {
+                settings
+                    .left_panel_width
+                    .clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
+            },
+            drag_start: None,
         });
 
     // Preference changes reset the width; drag changes retain the same panel and drag handle.
     if resize_state.compact != settings.compact_sidebar {
         ctx.data_mut(|data| data.remove::<egui::containers::panel::PanelState>(panel_id));
         resize_state.compact = settings.compact_sidebar;
+        resize_state.width = if settings.compact_sidebar {
+            COMPACT_WIDTH
+        } else {
+            settings
+                .left_panel_width
+                .clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
+        };
+        resize_state.drag_start = None;
     }
-    let panel_width = if settings.compact_sidebar {
-        COMPACT_WIDTH
-    } else {
-        settings
-            .left_panel_width
-            .clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
-    };
-    let output = egui::SidePanel::left(panel_id)
-        .resizable(true)
-        .default_width(panel_width)
-        .width_range(COMPACT_WIDTH..=MAX_WIDTH)
+    let panel_width = resize_state.width.clamp(COMPACT_WIDTH, MAX_WIDTH);
+    egui::SidePanel::left(panel_id)
+        .resizable(false)
+        .exact_width(panel_width)
         .frame(
             egui::Frame::new()
                 .fill(colors.sidebar)
                 .inner_margin(egui::Margin::symmetric(8, 10)),
         )
         .show(ctx, |ui| {
-            let compact = ui.available_width() + 16.0 < COMPACT_THRESHOLD;
+            // Switch the nav layout with the live width so labels do not clip while resizing.
+            let compact = resize_state.width < COMPACT_THRESHOLD;
             nav_item(
                 ui,
                 "Home",
@@ -74,44 +90,68 @@ pub(in crate::workbench) fn show(
                 settings,
                 &mut error,
             );
-        });
-
-    if !settings.left_panel_hidden {
-        let width = output.response.rect.width();
-        let compact = width < COMPACT_THRESHOLD;
-        if compact != settings.compact_sidebar {
-            settings.compact_sidebar = compact;
-            resize_state.pending_save = true;
-        }
-        let dragging = ctx.input(|input| input.pointer.primary_down());
-        if !dragging {
-            // Snap to the icon rail on release while preserving the previous expanded width.
-            let settled_width = if compact {
-                COMPACT_WIDTH
-            } else {
-                width.clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
-            };
-            if (settled_width - width).abs() > 0.5 {
-                let mut rect = output.response.rect;
-                rect.max.x = rect.min.x + settled_width;
-                ctx.data_mut(|data| {
-                    data.insert_persisted(panel_id, egui::containers::panel::PanelState { rect })
-                });
-                ctx.request_repaint();
+            let content_rect = ui.max_rect();
+            let handle_rect = egui::Rect::from_min_max(
+                egui::pos2(content_rect.right() - 6.0, content_rect.top()),
+                content_rect.right_bottom(),
+            );
+            let resize = ui.interact(
+                handle_rect,
+                panel_id.with("resize-handle"),
+                egui::Sense::drag(),
+            );
+            if resize.hovered() || resize.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                ui.painter().line_segment(
+                    [
+                        handle_rect.right_center() - egui::vec2(0.0, 10.0),
+                        handle_rect.right_center() + egui::vec2(0.0, 10.0),
+                    ],
+                    egui::Stroke::new(
+                        if resize.dragged() { 2.0_f32 } else { 1.0_f32 },
+                        if resize.dragged() {
+                            colors.accent
+                        } else {
+                            colors.muted
+                        },
+                    ),
+                );
             }
-            if !compact && (settled_width - settings.left_panel_width).abs() > 0.5 {
-                settings.left_panel_width = settled_width;
-                resize_state.pending_save = true;
+            if resize.drag_started() {
+                if let Some(pointer) = resize.interact_pointer_pos() {
+                    resize_state.drag_start = Some(DragStart {
+                        pointer_x: pointer.x,
+                        width: panel_width,
+                    });
+                }
             }
-            if resize_state.pending_save {
+            if resize.dragged() || resize.drag_stopped() {
+                if let (Some(drag_start), Some(pointer)) =
+                    (resize_state.drag_start, resize.interact_pointer_pos())
+                {
+                    resize_state.width = (drag_start.width + pointer.x - drag_start.pointer_x)
+                        .clamp(COMPACT_WIDTH, MAX_WIDTH);
+                }
+                ui.ctx().request_repaint();
+            }
+            if resize.drag_stopped() {
+                let compact = resize_state.width < COMPACT_THRESHOLD;
+                resize_state.width = if compact {
+                    COMPACT_WIDTH
+                } else {
+                    resize_state.width.clamp(MIN_EXPANDED_WIDTH, MAX_WIDTH)
+                };
+                settings.compact_sidebar = compact;
+                if !compact {
+                    settings.left_panel_width = resize_state.width;
+                }
+                resize_state.compact = compact;
+                resize_state.drag_start = None;
                 if let Err(save_error) = settings.save() {
                     error = Some(format!("Could not save settings: {save_error}"));
                 }
-                resize_state.pending_save = false;
             }
-        }
-    }
-    resize_state.compact = settings.compact_sidebar;
+        });
     ctx.data_mut(|data| data.insert_temp(resize_state_id, resize_state));
 
     // If album details were closed and panel was hidden, show it again
