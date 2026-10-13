@@ -97,7 +97,7 @@ impl DiscordPresence {
             state
         };
         let mut activity = activity::Activity::new()
-            .name("Viper")
+            .name("Viper Music")
             .activity_type(activity::ActivityType::Listening)
             .status_display_type(activity::StatusDisplayType::Details)
             .details(title)

@@ -12,7 +12,7 @@ tools_dir="${XDG_CACHE_HOME:-$HOME/.cache}/viper/appimage-tools"
 linuxdeploy="$tools_dir/linuxdeploy-x86_64.AppImage"
 appimage_dir="$repo_root/target/appimage"
 appdir="$appimage_dir/AppDir"
-output="$appimage_dir/Viper-x86_64.AppImage"
+output="$appimage_dir/Viper-Music-x86_64.AppImage"
 version=$(awk -F '"' '/^version = / { print $2; exit }' "$repo_root/Cargo.toml")
 
 mkdir -p "$tools_dir" "$appimage_dir"

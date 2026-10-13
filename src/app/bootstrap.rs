@@ -70,7 +70,7 @@ fn load_app_fonts() -> eframe::egui::FontDefinitions {
     definitions
 }
 
-/// Launch the native Viper application window.
+/// Launch the native Viper Music application window.
 ///
 /// # Returns
 /// The result from the eframe event loop.
@@ -105,7 +105,7 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Viper",
+        "Viper Music",
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_fonts(load_app_fonts());
