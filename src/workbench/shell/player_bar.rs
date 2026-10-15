@@ -1,6 +1,9 @@
 use crate::shared::artwork::ArtworkCache;
 use crate::{
-    features::{library::state::LibraryFeature, playback::Playback},
+    features::{
+        library::state::LibraryFeature,
+        playback::{can_play, play_or_pause, play_target_label, Playback, RepeatMode},
+    },
     platform::persistence::settings::Settings,
     workbench::WorkbenchState,
 };
@@ -30,6 +33,9 @@ pub(in crate::workbench) fn show(
         )
         .show(ctx, |ui| {
             let current = playback.current;
+            let play_enabled = can_play(playback, library);
+            let previous_enabled = current.is_some() || playback.has_history();
+            let next_enabled = playback.queued_len() > 0;
             let duration = current
                 .and_then(|index| library.model.tracks.get(index))
                 .and_then(|track| track.duration_ms)
@@ -62,13 +68,6 @@ pub(in crate::workbench) fn show(
             let controls_rect = egui::Rect::from_center_size(
                 row_rect.center(),
                 egui::vec2(controls_width, row_rect.height()),
-            );
-            let stop_rect = egui::Rect::from_center_size(
-                egui::pos2(
-                    row_rect.center().x - control_spacing * 3.0,
-                    controls_rect.center().y,
-                ),
-                egui::vec2(34.0, 38.0),
             );
             let shuffle_rect = egui::Rect::from_center_size(
                 egui::pos2(
@@ -107,15 +106,6 @@ pub(in crate::workbench) fn show(
                 ),
                 egui::vec2(34.0, 38.0),
             );
-            let stop = transport_icon_button(
-                ui,
-                stop_rect,
-                "player-stop",
-                egui_phosphor::regular::STOP,
-                "Stop",
-                false,
-                playback.current.is_some(),
-            );
             let shuffle = transport_icon_button(
                 ui,
                 shuffle_rect,
@@ -129,42 +119,6 @@ pub(in crate::workbench) fn show(
                 playback.shuffle_enabled,
                 true,
             );
-            let previous = ui.interact(
-                previous_rect,
-                egui::Id::new("player-previous"),
-                egui::Sense::click(),
-            );
-            let play = ui.interact(
-                play_rect,
-                egui::Id::new("player-play-pause"),
-                egui::Sense::click(),
-            );
-            let next = ui.interact(
-                next_rect,
-                egui::Id::new("player-next"),
-                egui::Sense::click(),
-            );
-            let repeat = transport_icon_button(
-                ui,
-                repeat_rect,
-                if playback.repeat_track {
-                    "player-repeat-track"
-                } else {
-                    "player-repeat"
-                },
-                if playback.repeat_track {
-                    egui_phosphor::regular::REPEAT_ONCE
-                } else {
-                    egui_phosphor::regular::REPEAT
-                },
-                if playback.repeat_track {
-                    "Repeat track: On"
-                } else {
-                    "Repeat track: Off"
-                },
-                playback.repeat_track,
-                true,
-            );
             let random = transport_icon_button(
                 ui,
                 random_rect,
@@ -174,19 +128,82 @@ pub(in crate::workbench) fn show(
                 false,
                 !library.model.tracks.is_empty(),
             );
+            let previous = ui.interact(
+                previous_rect,
+                egui::Id::new("player-previous"),
+                if previous_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
+            );
+            let play = ui.interact(
+                play_rect,
+                egui::Id::new("player-play-pause"),
+                if play_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
+            );
+            let next = ui.interact(
+                next_rect,
+                egui::Id::new("player-next"),
+                if next_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
+            );
+            let (repeat_id, repeat_icon, repeat_tooltip, repeat_active) = match playback.repeat_mode {
+                RepeatMode::Off => (
+                    "player-repeat",
+                    egui_phosphor::regular::REPEAT,
+                    "Repeat: Off",
+                    false,
+                ),
+                RepeatMode::All => (
+                    "player-repeat-all",
+                    egui_phosphor::regular::REPEAT,
+                    "Repeat: All",
+                    true,
+                ),
+                RepeatMode::One => (
+                    "player-repeat-track",
+                    egui_phosphor::regular::REPEAT_ONCE,
+                    "Repeat: One",
+                    true,
+                ),
+            };
+            let repeat = transport_icon_button(
+                ui,
+                repeat_rect,
+                repeat_id,
+                repeat_icon,
+                repeat_tooltip,
+                repeat_active,
+                true,
+            );
             ui.painter().text(
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_BACK,
                 egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
-                if previous.hovered() {
+                if previous.hovered() && previous_enabled {
                     colors.text
                 } else {
                     colors.muted
                 },
             );
-            ui.painter()
-                .circle_filled(play_rect.center(), 23.0, colors.accent);
+            ui.painter().circle_filled(
+                play_rect.center(),
+                23.0,
+                if play_enabled {
+                    colors.accent
+                } else {
+                    colors.surface
+                },
+            );
             let icon = if playback.is_playing() {
                 egui_phosphor::regular::PAUSE
             } else {
@@ -197,29 +214,30 @@ pub(in crate::workbench) fn show(
                 egui::Align2::CENTER_CENTER,
                 icon,
                 egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
-                colors.on_accent,
+                if play_enabled {
+                    colors.on_accent
+                } else {
+                    colors.muted
+                },
             );
             ui.painter().text(
                 next_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_FORWARD,
                 egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
-                if next.hovered() {
+                if next.hovered() && next_enabled {
                     colors.text
                 } else {
                     colors.muted
                 },
             );
             let previous = previous.on_hover_text("Previous track");
-            let play = play.on_hover_text(if playback.is_playing() {
-                "Pause"
+            let play = play.on_hover_text(if play_enabled {
+                play_target_label(playback, library)
             } else {
-                "Play"
+                "Select an album or turn on Shuffle to play"
             });
             let next = next.on_hover_text("Next track");
-            if stop.clicked() {
-                playback.stop();
-            }
             if shuffle.clicked() {
                 playback.toggle_shuffle(
                     &library.model.tracks,
@@ -227,25 +245,17 @@ pub(in crate::workbench) fn show(
                     settings.shuffle_scope,
                 );
             }
-            if repeat.clicked() {
-                playback.toggle_repeat_track(&library.model.tracks);
-            }
             if random.clicked() {
                 playback.play_random_track(&library.model.tracks);
+            }
+            if repeat.clicked() {
+                playback.toggle_repeat(&library.model.tracks);
             }
             if previous.clicked() {
                 playback.previous(&library.model.tracks);
             }
             if play.clicked() {
-                if current.is_some() {
-                    playback.toggle_pause();
-                } else if let Some(album_index) = library.view.selected_album {
-                    if let Some(album) = library.model.albums.get(album_index) {
-                        playback.play_album(album, &library.model.tracks, settings.shuffle_scope);
-                    }
-                } else if playback.shuffle_enabled {
-                    playback.play_random_track(&library.model.tracks);
-                }
+                play_or_pause(playback, library, settings.shuffle_scope);
             }
             if next.clicked() {
                 playback.skip_next(
