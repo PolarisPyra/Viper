@@ -38,7 +38,11 @@ pub(in crate::workbench) fn show(
             let row_width = ui.available_width();
             let (row_rect, _) =
                 ui.allocate_exact_size(egui::vec2(row_width, 72.0), egui::Sense::hover());
-            let max_info_width = ((row_width - 320.0) * 0.5 - 16.0).max(0.0);
+            let volume_width = if row_width < 862.0 { 150.0 } else { 176.0 };
+            let control_spacing =
+                ((row_width * 0.5 - volume_width - 50.0 - 17.0 - 8.0) / 3.0).clamp(44.0, 60.0);
+            let controls_width = control_spacing * 6.0 + 34.0;
+            let max_info_width = ((row_width - controls_width) * 0.5 - 16.0).max(0.0);
             let info_rect = egui::Rect::from_min_size(
                 row_rect.min,
                 egui::vec2(
@@ -57,30 +61,50 @@ pub(in crate::workbench) fn show(
             // shifts them when the track-info column has no content.
             let controls_rect = egui::Rect::from_center_size(
                 row_rect.center(),
-                egui::vec2(320.0, row_rect.height()),
+                egui::vec2(controls_width, row_rect.height()),
             );
             let stop_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x - 120.0, controls_rect.center().y),
+                egui::pos2(
+                    row_rect.center().x - control_spacing * 3.0,
+                    controls_rect.center().y,
+                ),
                 egui::vec2(34.0, 38.0),
             );
             let shuffle_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x - 72.0, controls_rect.center().y),
+                egui::pos2(
+                    row_rect.center().x - control_spacing * 2.0,
+                    controls_rect.center().y,
+                ),
                 egui::vec2(34.0, 38.0),
             );
             let previous_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x - 24.0, controls_rect.center().y),
+                egui::pos2(
+                    row_rect.center().x - control_spacing,
+                    controls_rect.center().y,
+                ),
                 egui::vec2(40.0, 44.0),
             );
-            let play_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x + 24.0, controls_rect.center().y),
-                egui::vec2(50.0, 50.0),
-            );
+            let play_rect =
+                egui::Rect::from_center_size(controls_rect.center(), egui::vec2(50.0, 50.0));
             let next_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x + 72.0, controls_rect.center().y),
+                egui::pos2(
+                    row_rect.center().x + control_spacing,
+                    controls_rect.center().y,
+                ),
                 egui::vec2(40.0, 44.0),
             );
             let repeat_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.center().x + 120.0, controls_rect.center().y),
+                egui::pos2(
+                    row_rect.center().x + control_spacing * 2.0,
+                    controls_rect.center().y,
+                ),
+                egui::vec2(34.0, 38.0),
+            );
+            let random_rect = egui::Rect::from_center_size(
+                egui::pos2(
+                    row_rect.center().x + control_spacing * 3.0,
+                    controls_rect.center().y,
+                ),
                 egui::vec2(34.0, 38.0),
             );
             let stop = transport_icon_button(
@@ -141,6 +165,15 @@ pub(in crate::workbench) fn show(
                 playback.repeat_track,
                 true,
             );
+            let random = transport_icon_button(
+                ui,
+                random_rect,
+                "player-random-track",
+                egui_phosphor::regular::DICE_FIVE,
+                "Play random song",
+                false,
+                !library.model.tracks.is_empty(),
+            );
             ui.painter().text(
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -197,6 +230,9 @@ pub(in crate::workbench) fn show(
             if repeat.clicked() {
                 playback.toggle_repeat_track(&library.model.tracks);
             }
+            if random.clicked() {
+                playback.play_random_track(&library.model.tracks);
+            }
             if previous.clicked() {
                 playback.previous(&library.model.tracks);
             }
@@ -220,8 +256,11 @@ pub(in crate::workbench) fn show(
             }
 
             let volume_area = egui::Rect::from_min_size(
-                egui::pos2(row_rect.right() - 226.0, row_rect.center().y - 15.0),
-                egui::vec2(176.0, 30.0),
+                egui::pos2(
+                    row_rect.right() - volume_width - 50.0,
+                    row_rect.center().y - 15.0,
+                ),
+                egui::vec2(volume_width, 30.0),
             );
             let queue_rect = egui::Rect::from_center_size(
                 egui::pos2(row_rect.right() - 24.0, row_rect.center().y),
