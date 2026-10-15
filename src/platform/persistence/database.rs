@@ -8,7 +8,29 @@ const ALBUM_LAYOUT_SCHEMA: &str = include_str!("migrations/0003_album_layout.sql
 const SAMBA_SETTINGS_SCHEMA: &str = include_str!("migrations/0004_samba_settings.sql");
 
 pub(crate) fn database_path() -> io::Result<PathBuf> {
+    Ok(config_directory()?
+        .join("viper-music")
+        .join("viper.sqlite3"))
+}
+
+pub(crate) fn previous_database_path() -> io::Result<PathBuf> {
     Ok(config_directory()?.join("viper").join("viper.sqlite3"))
+}
+
+fn migrate_previous_config_directory() -> io::Result<()> {
+    let current_directory = database_path()?
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "database path has no parent"))?
+        .to_path_buf();
+    let previous_directory = previous_database_path()?
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "database path has no parent"))?
+        .to_path_buf();
+
+    if !current_directory.exists() && previous_directory.exists() {
+        fs::rename(previous_directory, current_directory)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn legacy_database_path() -> io::Result<PathBuf> {
@@ -34,6 +56,7 @@ fn config_directory() -> io::Result<PathBuf> {
 /// Returns an I/O error if the database cannot be opened or migrated.
 pub(crate) fn open() -> io::Result<Connection> {
     let path = database_path()?;
+    migrate_previous_config_directory()?;
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -43,9 +66,17 @@ pub(crate) fn open() -> io::Result<Connection> {
     std::fs::create_dir_all(parent)?;
 
     if !path.exists() {
+        let previous_path = previous_database_path()?;
         let legacy_path = legacy_database_path()?;
-        if legacy_path.exists() {
-            let legacy_connection = Connection::open(legacy_path).map_err(database_error)?;
+        let source_path = if previous_path.exists() {
+            Some(previous_path)
+        } else if legacy_path.exists() {
+            Some(legacy_path)
+        } else {
+            None
+        };
+        if let Some(source_path) = source_path {
+            let legacy_connection = Connection::open(source_path).map_err(database_error)?;
             legacy_connection
                 .backup("main", &path, None)
                 .map_err(database_error)?;

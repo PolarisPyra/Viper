@@ -508,12 +508,15 @@ fn sqlite_integer(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
 
-fn legacy_settings_paths() -> io::Result<[PathBuf; 4]> {
+fn legacy_settings_paths() -> io::Result<[PathBuf; 6]> {
     let database = super::database::database_path()?;
+    let previous_database = super::database::previous_database_path()?;
     let legacy_database = super::database::legacy_database_path()?;
     Ok([
         database.with_file_name("settings.json"),
         database.with_file_name("musicplayer.json"),
+        previous_database.with_file_name("settings.json"),
+        previous_database.with_file_name("musicplayer.json"),
         legacy_database.with_file_name("settings.json"),
         legacy_database.with_file_name("musicplayer.json"),
     ])

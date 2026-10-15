@@ -6,7 +6,7 @@ Viper is a fast, album-centric native music player for Linux with a low memory f
 
 ## Security
 
-If you save Samba credentials, Viper stores the password in its local SQLite database at `~/.config/viper/viper.sqlite3`. Anyone who can read that file may be able to retrieve the credentials.
+If you save Samba credentials, Viper stores the password in its local SQLite database at `~/.config/viper-music/viper.sqlite3`. Anyone who can read that file may be able to retrieve the credentials.
 
 ## Requirements
 
@@ -31,7 +31,7 @@ The app opens to the Home view. To select or change the music folder, choose **L
 - Load cover art from neighboring image files or embedded audio artwork; artwork is reduced to a 320 px thumbnail and cached.
 - Read audio metadata and embedded artwork with Lofty and Symphonia.
 
-Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/viper/viper.sqlite3`. Existing settings databases are copied from the previous `~/.config/viper/` location on first launch.
+Preferences let you choose your music folder and startup page. Preferences and album state are stored in SQLite at `~/.config/viper-music/viper.sqlite3`. On first launch, Viper moves the existing `~/.config/viper/` directory when the new location is absent. Databases from the older `~/.config/musicplayer/` location are copied when needed.
 
 ## Build an AppImage
 
