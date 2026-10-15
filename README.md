@@ -50,17 +50,18 @@ distribution you intend to support for the best compatibility with older systems
 From a checkout of this repository, install Viper with:
 
 ```sh
-./packaging/install-arch.sh
+./packaging/packenger.sh install
 ```
 
-The script builds the release binary and installs Viper under `/usr/bin` with its
-application menu entry and icon. Cargo and the native build/runtime dependencies must
-already be installed. It uses `sudo` when needed; you can also run it as root.
+The command builds the release binary and installs Viper under `/usr/bin`, with its
+application menu entry and icon in the standard hicolor theme. Cargo and the native
+build/runtime dependencies must already be installed. It uses `sudo` when needed; you
+can also run it as root.
 
 To remove the installed application files later, run:
 
 ```sh
-./packaging/uninstall-arch.sh
+./packaging/packenger.sh uninstall
 ```
 
 ## Samba / SMB libraries
