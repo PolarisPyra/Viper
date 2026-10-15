@@ -71,11 +71,20 @@ impl eframe::App for ViperApp {
                 self.playback.toggle_pause();
             } else if let Some(album_index) = self.library.view.selected_album {
                 if let Some(album) = self.library.model.albums.get(album_index) {
-                    self.playback.play_album(
-                        album,
-                        &self.library.model.tracks,
-                        self.settings.shuffle_scope,
-                    );
+                    if let Some(track_index) = self
+                        .library
+                        .view
+                        .selected_track
+                        .filter(|index| album.tracks.contains(index))
+                    {
+                        self.playback.play_track_in_album(
+                            album,
+                            &self.library.model.tracks,
+                            track_index,
+                        );
+                    } else {
+                        self.playback.play_album(album, &self.library.model.tracks);
+                    }
                 }
             } else if self.playback.shuffle_enabled {
                 self.playback.play_random_track(&self.library.model.tracks);
@@ -102,7 +111,8 @@ impl eframe::App for ViperApp {
             }
             self.playback.update_gapless(
                 &self.library.model.tracks,
-                self.settings.gapless_playback && !self.playback.repeat_track,
+                self.settings.gapless_playback
+                    && self.playback.repeat_mode != crate::features::playback::RepeatMode::One,
             );
             if self.playback.current.is_some() {
                 ctx.request_repaint_after(Duration::from_millis(400));

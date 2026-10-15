@@ -133,11 +133,9 @@ fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, 
 pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, index: usize) {
     if screen.library.view.selected_album == Some(index) {
         if let Some(album) = screen.library.model.albums.get(index).cloned() {
-            screen.playback.play_album(
-                &album,
-                &screen.library.model.tracks,
-                screen.settings.shuffle_scope,
-            );
+            screen
+                .playback
+                .play_album(&album, &screen.library.model.tracks);
         }
     } else {
         screen.library.view.selected_track = None;

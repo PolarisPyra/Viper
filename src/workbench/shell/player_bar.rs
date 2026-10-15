@@ -30,6 +30,8 @@ pub(in crate::workbench) fn show(
         )
         .show(ctx, |ui| {
             let current = playback.current;
+            let previous_enabled = current.is_some() || playback.has_history();
+            let next_enabled = playback.has_next();
             let duration = current
                 .and_then(|index| library.model.tracks.get(index))
                 .and_then(|track| track.duration_ms)
@@ -40,8 +42,8 @@ pub(in crate::workbench) fn show(
                 ui.allocate_exact_size(egui::vec2(row_width, 72.0), egui::Sense::hover());
             let volume_width = if row_width < 862.0 { 150.0 } else { 176.0 };
             let control_spacing =
-                ((row_width * 0.5 - volume_width - 50.0 - 17.0 - 8.0) / 3.0).clamp(44.0, 60.0);
-            let controls_width = control_spacing * 6.0 + 34.0;
+                ((row_width * 0.5 - volume_width - 50.0 - 17.0 - 8.0) / 2.0).clamp(54.0, 68.0);
+            let controls_width = control_spacing * 4.0 + 34.0;
             let max_info_width = ((row_width - controls_width) * 0.5 - 16.0).max(0.0);
             let info_rect = egui::Rect::from_min_size(
                 row_rect.min,
@@ -62,13 +64,6 @@ pub(in crate::workbench) fn show(
             let controls_rect = egui::Rect::from_center_size(
                 row_rect.center(),
                 egui::vec2(controls_width, row_rect.height()),
-            );
-            let stop_rect = egui::Rect::from_center_size(
-                egui::pos2(
-                    row_rect.center().x - control_spacing * 3.0,
-                    controls_rect.center().y,
-                ),
-                egui::vec2(34.0, 38.0),
             );
             let shuffle_rect = egui::Rect::from_center_size(
                 egui::pos2(
@@ -100,22 +95,6 @@ pub(in crate::workbench) fn show(
                 ),
                 egui::vec2(34.0, 38.0),
             );
-            let random_rect = egui::Rect::from_center_size(
-                egui::pos2(
-                    row_rect.center().x + control_spacing * 3.0,
-                    controls_rect.center().y,
-                ),
-                egui::vec2(34.0, 38.0),
-            );
-            let stop = transport_icon_button(
-                ui,
-                stop_rect,
-                "player-stop",
-                egui_phosphor::regular::STOP,
-                "Stop",
-                false,
-                playback.current.is_some(),
-            );
             let shuffle = transport_icon_button(
                 ui,
                 shuffle_rect,
@@ -132,61 +111,81 @@ pub(in crate::workbench) fn show(
             let previous = ui.interact(
                 previous_rect,
                 egui::Id::new("player-previous"),
-                egui::Sense::click(),
+                if previous_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
             );
+            let can_start = playback.current.is_some()
+                || library
+                    .view
+                    .selected_album
+                    .and_then(|index| library.model.albums.get(index))
+                    .is_some_and(|album| !album.tracks.is_empty())
+                || playback.has_next()
+                || (playback.shuffle_enabled && !library.model.tracks.is_empty());
+            let play_enabled = playback.current.is_some() || can_start;
             let play = ui.interact(
                 play_rect,
                 egui::Id::new("player-play-pause"),
-                egui::Sense::click(),
+                if play_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
             );
             let next = ui.interact(
                 next_rect,
                 egui::Id::new("player-next"),
-                egui::Sense::click(),
+                if next_enabled {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                },
             );
             let repeat = transport_icon_button(
                 ui,
                 repeat_rect,
-                if playback.repeat_track {
-                    "player-repeat-track"
-                } else {
-                    "player-repeat"
+                match playback.repeat_mode {
+                    crate::features::playback::RepeatMode::One => "player-repeat-one",
+                    crate::features::playback::RepeatMode::All => "player-repeat-all",
+                    crate::features::playback::RepeatMode::Off => "player-repeat-off",
                 },
-                if playback.repeat_track {
-                    egui_phosphor::regular::REPEAT_ONCE
-                } else {
-                    egui_phosphor::regular::REPEAT
+                match playback.repeat_mode {
+                    crate::features::playback::RepeatMode::One => {
+                        egui_phosphor::regular::REPEAT_ONCE
+                    }
+                    _ => egui_phosphor::regular::REPEAT,
                 },
-                if playback.repeat_track {
-                    "Repeat track: On"
-                } else {
-                    "Repeat track: Off"
+                match playback.repeat_mode {
+                    crate::features::playback::RepeatMode::Off => "Repeat: Off",
+                    crate::features::playback::RepeatMode::All => "Repeat: Queue",
+                    crate::features::playback::RepeatMode::One => "Repeat: Track",
                 },
-                playback.repeat_track,
+                playback.repeat_mode != crate::features::playback::RepeatMode::Off,
                 true,
-            );
-            let random = transport_icon_button(
-                ui,
-                random_rect,
-                "player-random-track",
-                egui_phosphor::regular::DICE_FIVE,
-                "Play random song",
-                false,
-                !library.model.tracks.is_empty(),
             );
             ui.painter().text(
                 previous_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_BACK,
                 egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
-                if previous.hovered() {
+                if previous.hovered() && previous_enabled {
                     colors.text
                 } else {
                     colors.muted
                 },
             );
-            ui.painter()
-                .circle_filled(play_rect.center(), 23.0, colors.accent);
+            ui.painter().circle_filled(
+                play_rect.center(),
+                23.0,
+                if playback.current.is_some() {
+                    colors.accent
+                } else {
+                    colors.surface
+                },
+            );
             let icon = if playback.is_playing() {
                 egui_phosphor::regular::PAUSE
             } else {
@@ -197,41 +196,39 @@ pub(in crate::workbench) fn show(
                 egui::Align2::CENTER_CENTER,
                 icon,
                 egui::FontId::new(34.0, egui::FontFamily::Name("phosphor".into())),
-                colors.on_accent,
+                if playback.current.is_some() {
+                    colors.on_accent
+                } else {
+                    colors.muted
+                },
             );
             ui.painter().text(
                 next_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 egui_phosphor::regular::SKIP_FORWARD,
                 egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
-                if next.hovered() {
+                if next.hovered() && next_enabled {
                     colors.text
                 } else {
                     colors.muted
                 },
             );
             let previous = previous.on_hover_text("Previous track");
-            let play = play.on_hover_text(if playback.is_playing() {
+            let play = play.on_hover_text(if playback.current.is_none() && !play_enabled {
+                "Select an album or turn on Shuffle to play"
+            } else if playback.is_playing() {
                 "Pause"
+            } else if playback.current.is_some() {
+                "Resume"
             } else {
                 "Play"
             });
             let next = next.on_hover_text("Next track");
-            if stop.clicked() {
-                playback.stop();
-            }
             if shuffle.clicked() {
-                playback.toggle_shuffle(
-                    &library.model.tracks,
-                    &library.model.albums,
-                    settings.shuffle_scope,
-                );
+                playback.toggle_shuffle(&library.model.tracks);
             }
             if repeat.clicked() {
-                playback.toggle_repeat_track(&library.model.tracks);
-            }
-            if random.clicked() {
-                playback.play_random_track(&library.model.tracks);
+                playback.cycle_repeat_mode(&library.model.tracks);
             }
             if previous.clicked() {
                 playback.previous(&library.model.tracks);
@@ -241,23 +238,29 @@ pub(in crate::workbench) fn show(
                     playback.toggle_pause();
                 } else if let Some(album_index) = library.view.selected_album {
                     if let Some(album) = library.model.albums.get(album_index) {
-                        playback.play_album(album, &library.model.tracks, settings.shuffle_scope);
+                        if let Some(track_index) = library
+                            .view
+                            .selected_track
+                            .filter(|index| album.tracks.contains(index))
+                        {
+                            playback.play_track_in_album(album, &library.model.tracks, track_index);
+                        } else {
+                            playback.play_album(album, &library.model.tracks);
+                        }
                     }
+                } else if playback.has_next() {
+                    playback.skip_next(&library.model.tracks);
                 } else if playback.shuffle_enabled {
                     playback.play_random_track(&library.model.tracks);
                 }
             }
             if next.clicked() {
-                playback.skip_next(
-                    &library.model.tracks,
-                    &library.model.albums,
-                    settings.shuffle_scope,
-                );
+                playback.skip_next(&library.model.tracks);
             }
 
             let volume_area = egui::Rect::from_min_size(
                 egui::pos2(
-                    row_rect.right() - volume_width - 50.0,
+                    row_rect.right() - volume_width - 90.0,
                     row_rect.center().y - 15.0,
                 ),
                 egui::vec2(volume_width, 30.0),
@@ -266,6 +269,22 @@ pub(in crate::workbench) fn show(
                 egui::pos2(row_rect.right() - 24.0, row_rect.center().y),
                 egui::vec2(34.0, 38.0),
             );
+            let random_rect = egui::Rect::from_center_size(
+                egui::pos2(row_rect.right() - 66.0, row_rect.center().y),
+                egui::vec2(34.0, 38.0),
+            );
+            let random = transport_icon_button(
+                ui,
+                random_rect,
+                "player-random-track",
+                egui_phosphor::regular::DICE_FIVE,
+                "Play random song",
+                false,
+                !library.model.tracks.is_empty(),
+            );
+            if random.clicked() {
+                playback.play_random_track(&library.model.tracks);
+            }
             let queue = transport_icon_button(
                 ui,
                 queue_rect,

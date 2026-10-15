@@ -313,35 +313,6 @@ fn show_audio(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<Pr
     {
         *action = Some(PreferencesAction::SaveSettings);
     }
-    ui.add_space(22.0);
-    section_title(ui, "Shuffle");
-    ui.label("Choose which tracks are included when shuffle is on.");
-    ui.add_space(8.0);
-    let scope = settings.shuffle_scope;
-    let mut selected_scope = scope;
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        for (option, label, status) in [
-            (
-                crate::platform::persistence::settings::ShuffleScope::CurrentAlbum,
-                "Current album",
-                "Shuffle tracks from the playing album",
-            ),
-            (
-                crate::platform::persistence::settings::ShuffleScope::FullLibrary,
-                "Full library",
-                "Shuffle tracks from your entire library",
-            ),
-        ] {
-            if choice_row(ui, label, selected_scope == option, status).clicked() {
-                selected_scope = option;
-            }
-        }
-    });
-    if selected_scope != scope {
-        settings.shuffle_scope = selected_scope;
-        *action = Some(PreferencesAction::SaveSettings);
-    }
 }
 
 fn choice_row(ui: &mut egui::Ui, label: &str, selected: bool, status: &str) -> egui::Response {

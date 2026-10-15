@@ -14,7 +14,6 @@ pub(in crate::workbench) fn show(
     workbench: &mut WorkbenchState,
     library: &LibraryFeature,
     playback: &mut Playback,
-    settings: &crate::platform::persistence::settings::Settings,
 ) -> Option<MenuBarAction> {
     let colors = crate::shared::ui::theme::colors(ctx);
     let mut action = None;
@@ -116,8 +115,11 @@ pub(in crate::workbench) fn show(
                                     ui.close_menu();
                                 }
                                 let has_current_track = playback.current.is_some();
-                                let can_play =
-                                    has_current_track || library.view.selected_album.is_some();
+                                let can_play = has_current_track
+                                    || library.view.selected_album.is_some()
+                                    || playback.has_next()
+                                    || (playback.shuffle_enabled
+                                        && !library.model.tracks.is_empty());
                                 let play_label = if has_current_track && playback.is_paused() {
                                     "Resume"
                                 } else if has_current_track {
@@ -139,12 +141,22 @@ pub(in crate::workbench) fn show(
                                         playback.toggle_pause();
                                     } else if let Some(album_index) = library.view.selected_album {
                                         if let Some(album) = library.model.albums.get(album_index) {
-                                            playback.play_album(
-                                                album,
-                                                &library.model.tracks,
-                                                settings.shuffle_scope,
-                                            );
+                                            if let Some(track_index) = library
+                                                .view
+                                                .selected_track
+                                                .filter(|index| album.tracks.contains(index))
+                                            {
+                                                playback.play_track_in_album(
+                                                    album,
+                                                    &library.model.tracks,
+                                                    track_index,
+                                                );
+                                            } else {
+                                                playback.play_album(album, &library.model.tracks);
+                                            }
                                         }
+                                    } else if playback.has_next() {
+                                        playback.skip_next(&library.model.tracks);
                                     } else if playback.shuffle_enabled {
                                         playback.play_random_track(&library.model.tracks);
                                     }
@@ -153,7 +165,7 @@ pub(in crate::workbench) fn show(
                                 ui.separator();
                                 if ui
                                     .add_enabled(
-                                        has_current_track,
+                                        has_current_track || playback.has_history(),
                                         egui::SelectableLabel::new(
                                             false,
                                             egui::RichText::new("Previous Track")
@@ -167,7 +179,7 @@ pub(in crate::workbench) fn show(
                                 }
                                 if ui
                                     .add_enabled(
-                                        has_current_track,
+                                        playback.has_next(),
                                         egui::SelectableLabel::new(
                                             false,
                                             egui::RichText::new("Next Track").color(colors.text),
@@ -175,11 +187,7 @@ pub(in crate::workbench) fn show(
                                     )
                                     .clicked()
                                 {
-                                    playback.skip_next(
-                                        &library.model.tracks,
-                                        &library.model.albums,
-                                        settings.shuffle_scope,
-                                    );
+                                    playback.skip_next(&library.model.tracks);
                                     ui.close_menu();
                                 }
                                 if ui

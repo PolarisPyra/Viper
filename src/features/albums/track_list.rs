@@ -100,7 +100,6 @@ pub(crate) fn show(
                         selected_track,
                         album_index,
                         settings.lyrics_panel_open,
-                        settings.shuffle_scope,
                     );
                     crate::features::lyrics::panel::show(
                         ctx,
@@ -376,7 +375,6 @@ fn show_tracks(
     selected_track: &mut Option<usize>,
     album_index: usize,
     lyrics_open: bool,
-    shuffle_scope: crate::platform::persistence::settings::ShuffleScope,
 ) -> f32 {
     let Some(album) = library.albums.get(album_index) else {
         return 0.0;
@@ -430,7 +428,6 @@ fn show_tracks(
                             track_index,
                             position,
                             track,
-                            shuffle_scope,
                         );
                     }
                     ui.add_space(18.0);
@@ -449,7 +446,6 @@ fn draw_track_row(
     track_index: usize,
     position: usize,
     track: &crate::features::library::Track,
-    shuffle_scope: crate::platform::persistence::settings::ShuffleScope,
 ) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     let (rect, response) =
@@ -546,7 +542,7 @@ fn draw_track_row(
     if response.clicked() {
         if selected {
             if let Some(album) = library.albums.get(album_index) {
-                playback.play_track_in_album(album, &library.tracks, track_index, shuffle_scope);
+                playback.play_track_in_album(album, &library.tracks, track_index);
             }
         } else {
             *selected_track = Some(track_index);
