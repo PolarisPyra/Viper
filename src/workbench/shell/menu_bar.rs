@@ -299,6 +299,7 @@ fn show_shortcuts_popup(ctx: &egui::Context, workbench: &mut WorkbenchState) {
             ui.add_space(8.0);
             let shortcuts = [
                 ("F", "Focus search"),
+                ("F5", "Play a random song"),
                 ("Q", "Show or hide queue"),
                 ("Space", "Play or pause"),
                 ("Esc", "Close album details"),

@@ -1,21 +1,94 @@
+use crate::platform::persistence::settings::Settings;
 use eframe::egui;
 
 use super::{open_album, paint_cover_with_opacity, show_shimmer_rect, AlbumScreen};
 
-pub(super) fn show_header(ui: &mut egui::Ui, width: f32) {
+const ARTWORK_COLUMN_WIDTH: f32 = 82.0;
+const MIN_COLUMN_WIDTH: f32 = 64.0;
+const COLUMN_CONTENT_INSET: f32 = 12.0;
+
+pub(super) fn show_header(
+    ui: &mut egui::Ui,
+    width: f32,
+    settings: &mut Settings,
+    error: &mut Option<String>,
+) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     const HEADER_HEIGHT: f32 = 32.0;
     let header = ui
         .allocate_exact_size(egui::vec2(width, HEADER_HEIGHT), egui::Sense::hover())
         .0;
-    let columns = egui::Rect::from_min_max(
-        egui::pos2(header.left() + 8.0, header.top()),
-        egui::pos2(header.right() - 8.0, header.bottom()),
-    );
+    let mut proportions = settings.album_list_column_widths;
+    let total_width = (header.right() - 8.0 - header.left() - 8.0 - ARTWORK_COLUMN_WIDTH).max(0.0);
+    let mut changed = false;
+    let mut should_save = false;
+    for boundary in 1..3 {
+        let positions = column_boundaries(header.left() + 8.0, header.right() - 8.0, proportions);
+        let x = positions[boundary];
+        let handle = egui::Rect::from_center_size(
+            egui::pos2(x, header.center().y),
+            egui::vec2(12.0, header.height()),
+        );
+        let response = ui
+            .interact(
+                handle,
+                ui.id().with(("album-list-column-resize", boundary)),
+                egui::Sense::drag(),
+            )
+            .on_hover_text("Drag to resize column");
+        if response.hovered() || response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        if response.dragged() && total_width > 0.0 {
+            let widths = distribute_column_widths(total_width, proportions);
+            let minimum = MIN_COLUMN_WIDTH.min(total_width / 3.0);
+            let delta = response
+                .drag_delta()
+                .x
+                .clamp(minimum - widths[boundary - 1], widths[boundary] - minimum);
+            if delta != 0.0 {
+                let mut resized = widths;
+                resized[boundary - 1] += delta;
+                resized[boundary] -= delta;
+                proportions = resized.map(|column_width| column_width / total_width);
+                changed = true;
+            }
+        }
+        should_save |= response.drag_stopped();
+        ui.painter().line_segment(
+            [
+                egui::pos2(x, header.top() + 6.0),
+                egui::pos2(x, header.bottom() - 6.0),
+            ],
+            egui::Stroke::new(
+                if response.hovered() || response.dragged() {
+                    2.0
+                } else {
+                    1.0_f32
+                },
+                if response.hovered() || response.dragged() {
+                    colors.accent
+                } else {
+                    colors.border
+                },
+            ),
+        );
+    }
+    if changed {
+        settings.album_list_column_widths = proportions;
+    }
+    if should_save {
+        if let Err(save_error) = settings.save() {
+            *error = Some(format!(
+                "Could not save album list column widths: {save_error}"
+            ));
+        }
+    }
+    let positions = column_boundaries(header.left() + 8.0, header.right() - 8.0, proportions);
     for (x, label) in [
-        (columns.left() + 82.0, "Title"),
-        (columns.left() + width * 0.53, "Artist"),
-        (columns.right() - 82.0, "Date"),
+        (positions[0] + COLUMN_CONTENT_INSET, "Title"),
+        (positions[1] + COLUMN_CONTENT_INSET, "Artist"),
+        (positions[2] + COLUMN_CONTENT_INSET, "Date"),
     ] {
         ui.painter().text(
             egui::pos2(x, header.center().y),
@@ -99,12 +172,17 @@ pub(super) fn show_album_list(
             );
         }
 
-        let title_x = rect.left() + 82.0;
-        let artist_x = rect.left() + width * 0.53;
-        let date_x = rect.right() - 82.0;
-        let title_width = (artist_x - title_x - 12.0).max(0.0);
-        let artist_width = (date_x - artist_x - 12.0).max(0.0);
-        let date_width = (rect.right() - date_x - 8.0).max(0.0);
+        let columns = column_boundaries(
+            rect.left(),
+            rect.right() - 8.0,
+            screen.settings.album_list_column_widths,
+        );
+        let title_x = columns[0] + COLUMN_CONTENT_INSET;
+        let artist_x = columns[1] + COLUMN_CONTENT_INSET;
+        let date_x = columns[2] + COLUMN_CONTENT_INSET;
+        let title_width = (columns[1] - title_x - 12.0).max(0.0);
+        let artist_width = (columns[2] - artist_x - 12.0).max(0.0);
+        let date_width = (columns[3] - date_x - 8.0).max(0.0);
         let year = album
             .tracks
             .iter()
@@ -137,6 +215,59 @@ pub(super) fn show_album_list(
             open_album(ctx, screen, album_index);
         }
     }
+}
+
+fn column_boundaries(left: f32, right: f32, proportions: [f32; 3]) -> [f32; 4] {
+    let start = left + ARTWORK_COLUMN_WIDTH;
+    let widths = distribute_column_widths((right - start).max(0.0), proportions);
+    [
+        start,
+        start + widths[0],
+        start + widths[0] + widths[1],
+        right,
+    ]
+}
+
+fn distribute_column_widths(total_width: f32, proportions: [f32; 3]) -> [f32; 3] {
+    if total_width <= 0.0 {
+        return [0.0; 3];
+    }
+    let mut weights = proportions.map(|weight| {
+        if weight.is_finite() && weight > 0.0 {
+            weight
+        } else {
+            0.0
+        }
+    });
+    let mut weight_total = weights.iter().sum::<f32>();
+    if weight_total <= f32::EPSILON {
+        weights = [0.50, 0.38, 0.12];
+        weight_total = 1.0;
+    }
+
+    let mut widths = weights.map(|weight| total_width * weight / weight_total);
+    let minimum = MIN_COLUMN_WIDTH.min(total_width / 3.0);
+    for index in 0..3 {
+        if widths[index] < minimum {
+            let deficit = minimum - widths[index];
+            let surplus = widths
+                .iter()
+                .enumerate()
+                .filter(|(other, width)| *other != index && **width > minimum)
+                .map(|(_, width)| *width - minimum)
+                .sum::<f32>();
+            if surplus > 0.0 {
+                for (other, width) in widths.iter_mut().enumerate() {
+                    if other != index && *width > minimum {
+                        let available = *width - minimum;
+                        *width -= deficit * available / surplus;
+                    }
+                }
+            }
+            widths[index] = minimum;
+        }
+    }
+    widths
 }
 
 pub(super) fn show_skeleton_list(ctx: &egui::Context, ui: &mut egui::Ui) {

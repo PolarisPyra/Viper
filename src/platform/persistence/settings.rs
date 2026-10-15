@@ -215,6 +215,8 @@ pub struct Settings {
     pub gapless_playback: bool,
     /// Selected album presentation layout.
     pub album_layout: AlbumLayout,
+    /// Relative widths for the Title, Artist, and Date columns in album list view.
+    pub album_list_column_widths: [f32; 3],
     /// Whether the album lyrics panel opens when an album track panel is shown.
     pub lyrics_panel_open: bool,
 }
@@ -242,6 +244,7 @@ impl Default for Settings {
             discord_rich_presence_enabled: true,
             gapless_playback: false,
             album_layout: AlbumLayout::Grid,
+            album_list_column_widths: [0.50, 0.38, 0.12],
             lyrics_panel_open: false,
         }
     }
@@ -265,7 +268,7 @@ impl Settings {
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
                         album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                         lyrics_panel_open, discord_rich_presence_enabled,
-                        gapless_playback
+                        gapless_playback, album_list_column_widths
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -287,6 +290,7 @@ impl Settings {
                         row.get::<_, bool>(14)?,
                         row.get::<_, bool>(15)?,
                         row.get::<_, bool>(16)?,
+                        row.get::<_, String>(17)?,
                     ))
                 },
             )
@@ -311,6 +315,7 @@ impl Settings {
             lyrics_panel_open,
             discord_rich_presence_enabled,
             gapless_playback,
+            album_list_column_widths,
         )) = stored
         {
             Self {
@@ -332,6 +337,7 @@ impl Settings {
                 lyrics_panel_open,
                 discord_rich_presence_enabled,
                 gapless_playback,
+                album_list_column_widths: decode_setting(&album_list_column_widths)?,
                 ..Self::default()
             }
         } else {
@@ -418,8 +424,8 @@ impl Settings {
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
                 album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                 lyrics_panel_open, discord_rich_presence_enabled,
-                gapless_playback
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                gapless_playback, album_list_column_widths
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
@@ -432,7 +438,8 @@ impl Settings {
                 theme=excluded.theme,
                 lyrics_panel_open=excluded.lyrics_panel_open,
                 discord_rich_presence_enabled=excluded.discord_rich_presence_enabled,
-                gapless_playback=excluded.gapless_playback",
+                gapless_playback=excluded.gapless_playback,
+                album_list_column_widths=excluded.album_list_column_widths",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -451,6 +458,7 @@ impl Settings {
                 self.lyrics_panel_open,
                 self.discord_rich_presence_enabled,
                 self.gapless_playback,
+                encode_setting(&self.album_list_column_widths)?,
             ],
         ).map_err(super::database::database_error)?;
 

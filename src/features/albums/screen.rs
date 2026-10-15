@@ -76,7 +76,7 @@ fn show_grid(
     let layout = screen.settings.album_layout;
     let width = ui.available_width();
     if layout == AlbumLayout::List {
-        list::show_header(ui, width);
+        list::show_header(ui, width, screen.settings, screen.error);
     }
 
     let bounds = ui.max_rect();

@@ -54,6 +54,13 @@ impl eframe::App for ViperApp {
         if queue_pressed {
             self.workbench.show_queue = !self.workbench.show_queue;
         }
+        let shuffle_pressed = !self.workbench.show_preferences
+            && !self.workbench.show_shortcuts
+            && !ctx.wants_keyboard_input()
+            && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F5));
+        if shuffle_pressed {
+            self.playback.play_random_track(&self.library.model.tracks);
+        }
         if !self.workbench.show_album_details
             && !self.workbench.show_preferences
             && self.settings.left_panel_hidden

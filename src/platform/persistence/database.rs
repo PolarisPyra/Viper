@@ -244,6 +244,17 @@ pub(crate) fn open() -> io::Result<Connection> {
         transaction.commit().map_err(database_error)?;
     }
 
+    if version < 14 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0014_album_list_column_widths.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 14)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
     Ok(connection)
 }
 
