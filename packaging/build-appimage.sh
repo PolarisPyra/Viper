@@ -13,6 +13,7 @@ linuxdeploy="$tools_dir/linuxdeploy-x86_64.AppImage"
 appimage_dir="$repo_root/target/appimage"
 appdir="$appimage_dir/AppDir"
 output="$appimage_dir/Viper-Music-x86_64.AppImage"
+appimage_desktop="$appimage_dir/viper.desktop"
 version=$(awk -F '"' '/^version = / { print $2; exit }' "$repo_root/Cargo.toml")
 
 mkdir -p "$tools_dir" "$appimage_dir"
@@ -25,6 +26,7 @@ fi
 
 cargo build --release --manifest-path "$repo_root/Cargo.toml"
 rm -rf "$appdir"
+sed 's|^Icon=.*|Icon=logo|' "$repo_root/packaging/viper.desktop" > "$appimage_desktop"
 
 cd "$appimage_dir"
 LDAI_OUTPUT="$output" \
@@ -32,7 +34,7 @@ LDAI_VERSION="$version" \
 APPIMAGE_EXTRACT_AND_RUN=1 "$linuxdeploy" \
     --appdir "$appdir" \
     --executable "$repo_root/target/release/viper" \
-    --desktop-file "$repo_root/packaging/viper.desktop" \
+    --desktop-file "$appimage_desktop" \
     --icon-file "$repo_root/assets/logo.png" \
     --output appimage
 printf 'Built %s\n' "$output"

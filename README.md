@@ -1,22 +1,5 @@
 # Viper
 
-## PipeWire MIDI Mixer
-
-This repository also includes a standalone Rust/egui port of the PipeWire MIDI
-mixer in the `pipewire_mixer` binary. Run it with:
-
-```sh
-cargo run --release --bin pipewire_mixer
-```
-
-It provides five application faders, per-fader mute, learned MIDI mute notes,
-CC 1–5 level control, and an **All Steam games** assignment. Settings are stored
-at `~/.config/pipewire-mixer/config.json`. Audio streams are rediscovered every
-two seconds; saved assignments reconnect when the application returns. MIDI
-inputs are rescanned and reconnected as devices appear or disappear. It needs
-`pw-dump`, `wpctl`, a PipeWire/PulseAudio-compatible session, and the Linux ALSA
-development libraries required by `midir` to build.
-
 ## Why Viper exists
 
 Viper is a fast, album-centric native music player for Linux with a low memory footprint. It is designed to browse and play music from local folders or Samba shares, including libraries served by Navidrome.

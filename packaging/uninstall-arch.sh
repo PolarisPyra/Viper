@@ -15,6 +15,7 @@ fi
 "${as_root[@]}" rm -f \
     /usr/bin/viper \
     /usr/share/applications/viper.desktop \
+    /usr/share/viper/logo.png \
     /usr/share/icons/hicolor/512x512/apps/viper.png
 
 if (( EUID != 0 )) && command -v kbuildsycoca6 >/dev/null 2>&1; then

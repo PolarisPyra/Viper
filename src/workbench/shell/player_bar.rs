@@ -26,7 +26,6 @@ pub(in crate::workbench) fn show(
         .frame(
             egui::Frame::new()
                 .fill(colors.panel)
-                .stroke(egui::Stroke::new(1.0_f32, colors.border))
                 .inner_margin(egui::Margin::symmetric(24, 8)),
         )
         .show(ctx, |ui| {
