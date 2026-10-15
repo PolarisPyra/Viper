@@ -266,11 +266,11 @@ pub(in crate::workbench) fn show(
                 egui::vec2(volume_width, 30.0),
             );
             let queue_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.right() - 24.0, row_rect.center().y),
+                egui::pos2(row_rect.right() - 66.0, row_rect.center().y),
                 egui::vec2(34.0, 38.0),
             );
             let random_rect = egui::Rect::from_center_size(
-                egui::pos2(row_rect.right() - 66.0, row_rect.center().y),
+                egui::pos2(row_rect.right() - 24.0, row_rect.center().y),
                 egui::vec2(34.0, 38.0),
             );
             let random = transport_icon_button(
