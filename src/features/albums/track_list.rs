@@ -455,7 +455,7 @@ fn draw_track_row(
     }
     response.context_menu(|ui| {
         if ui.button("Add to queue").clicked() {
-            playback.enqueue(track_index, &library.tracks);
+            playback.enqueue(track_index);
             ui.close_menu();
         }
     });
