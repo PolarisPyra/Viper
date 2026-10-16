@@ -122,15 +122,7 @@ impl eframe::App for ViperApp {
                     && self.playback.repeat_mode != crate::features::playback::RepeatMode::One,
             );
             if self.playback.current.is_some() {
-                let repaint_interval = if self
-                    .playback
-                    .gapless_preemption_near_end(&self.library.model.tracks)
-                {
-                    Duration::from_millis(16)
-                } else {
-                    Duration::from_millis(400)
-                };
-                ctx.request_repaint_after(repaint_interval);
+                ctx.request_repaint_after(Duration::from_millis(400));
             }
         }
         self.observe_playback_track();
