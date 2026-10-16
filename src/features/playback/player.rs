@@ -14,19 +14,6 @@ pub(crate) enum RepeatMode {
     One,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum QueueSourceKind {
-    Manual,
-    Automatic,
-}
-
-#[derive(Clone, Copy)]
-struct GaplessSource {
-    track_index: usize,
-    kind: QueueSourceKind,
-    skip: bool,
-}
-
 /// Current audio playback state, queue, history, and volume.
 pub struct Playback {
     /// Index of the currently playing track in the supplied library, if any.
@@ -42,8 +29,10 @@ pub struct Playback {
     position: Duration,
     paused: bool,
     gapless_active: bool,
-    gapless_sources: VecDeque<GaplessSource>,
+    gapless_track: Option<usize>,
+    gapless_from_manual_queue: bool,
     gapless_preempt: bool,
+    gapless_skip_current: bool,
     source_count: usize,
     /// Whether upcoming tracks are shuffled.
     pub(crate) shuffle_enabled: bool,
@@ -238,20 +227,26 @@ impl Playback {
         if self.gapless_active {
             let source_count = self.player.as_ref().map_or(0, Player::len);
             let completed = self.source_count.saturating_sub(source_count);
-            for _ in 0..completed {
-                if let Some(source) = self.gapless_sources.pop_front() {
-                    self.pop_queue_source(source.kind);
-                    if !source.skip {
-                        if let Some(finished_track) = self.current {
-                            self.push_history(finished_track);
-                        }
-                        self.current = Some(source.track_index);
-                        self.position = Duration::ZERO;
+            if completed > 0 {
+                if let Some(finished_track) = self.current {
+                    if self.gapless_skip_current {
+                        self.gapless_skip_current = false;
+                    } else {
+                        self.push_history(finished_track);
                     }
-                } else if let Some(finished_track) = self.current.take() {
-                    self.push_history(finished_track);
-                    self.position = Duration::ZERO;
                 }
+                self.current = if let Some(track_index) = self.gapless_track.take() {
+                    if self.gapless_from_manual_queue {
+                        self.manual_queue.pop_front();
+                    } else {
+                        self.auto_queue.pop_front();
+                    }
+                    self.gapless_from_manual_queue = false;
+                    Some(track_index)
+                } else {
+                    self.pop_next_queued_track()
+                };
+                self.position = Duration::ZERO;
             }
             self.source_count = source_count;
             if source_count == 0 {
@@ -259,7 +254,6 @@ impl Playback {
                 self.position = Duration::ZERO;
                 self.paused = false;
                 self.gapless_active = false;
-                self.gapless_sources.clear();
                 if let Some(finished_track) = self.current.take() {
                     self.push_history(finished_track);
                 }
@@ -268,7 +262,7 @@ impl Playback {
                     self.start_track(tracks, next);
                 }
             } else {
-                self.gapless_active = !self.gapless_sources.is_empty();
+                self.gapless_active = source_count > 1;
             }
             return;
         }
@@ -312,71 +306,61 @@ impl Playback {
             }
             return;
         }
-        if self.current.is_none() {
+        if self.gapless_active || self.current.is_none() {
             return;
         }
         let Some(player) = self.player.as_ref() else {
             return;
         };
-        if self.gapless_preempt && self.gapless_active {
-            self.gapless_preempt = false;
+        if self.gapless_preempt {
             let Some(track_index) = self.manual_queue.front().copied() else {
+                self.gapless_preempt = false;
                 return;
             };
             let Some(track) = tracks.get(track_index) else {
                 self.manual_queue.pop_front();
+                self.gapless_preempt = false;
                 return;
             };
             match self.open_decoder(&track.path) {
                 Ok(decoder) => {
-                    if let Some(source) =
-                        self.gapless_sources.iter_mut().find(|source| !source.skip)
-                    {
-                        source.skip = true;
-                        player.skip_one();
-                        player.append(decoder);
-                        self.gapless_sources.push_back(GaplessSource {
-                            track_index,
-                            kind: QueueSourceKind::Manual,
-                            skip: false,
-                        });
-                        self.source_count = player.len();
-                    }
+                    player.append(decoder);
+                    // The prior track has ended; the preloaded automatic track is now active.
+                    player.skip_one();
+                    self.source_count = player.len();
+                    self.gapless_active = self.source_count > 1;
+                    self.gapless_track = Some(track_index);
+                    self.gapless_from_manual_queue = true;
+                    self.gapless_preempt = false;
+                    self.gapless_skip_current = true;
                 }
                 Err(error) => {
                     self.manual_queue.pop_front();
+                    self.gapless_preempt = false;
                     self.error = Some(error);
                 }
             }
             return;
         }
-        if self.gapless_active {
-            return;
-        }
-        let Some((track_index, kind)) = self.next_queued_track() else {
+        let Some(track_index) = self.next_queued_track() else {
             return;
         };
         let Some(track) = tracks.get(track_index) else {
-            self.pop_queue_source(kind);
+            self.discard_next_queued_track();
             return;
         };
         match self.open_decoder(&track.path) {
-            Ok(decoder) => {
-                player.append(decoder);
-                self.gapless_sources.push_back(GaplessSource {
-                    track_index,
-                    kind,
-                    skip: false,
-                });
-            }
+            Ok(decoder) => player.append(decoder),
             Err(error) => {
-                self.pop_queue_source(kind);
+                self.discard_next_queued_track();
                 self.error = Some(error);
                 return;
             }
         }
         self.source_count = player.len();
-        self.gapless_active = !self.gapless_sources.is_empty();
+        self.gapless_active = self.source_count > 1;
+        self.gapless_track = self.gapless_active.then_some(track_index);
+        self.gapless_from_manual_queue = self.gapless_active && !self.manual_queue.is_empty();
     }
 
     /// Return manually queued tracks, excluding automatic album and shuffle tracks.
@@ -402,27 +386,18 @@ impl Playback {
             .or_else(|| self.auto_queue.pop_front())
     }
 
-    fn next_queued_track(&self) -> Option<(usize, QueueSourceKind)> {
+    fn next_queued_track(&self) -> Option<usize> {
         self.manual_queue
             .front()
+            .or_else(|| self.auto_queue.front())
             .copied()
-            .map(|index| (index, QueueSourceKind::Manual))
-            .or_else(|| {
-                self.auto_queue
-                    .front()
-                    .copied()
-                    .map(|index| (index, QueueSourceKind::Automatic))
-            })
     }
 
-    fn pop_queue_source(&mut self, kind: QueueSourceKind) {
-        match kind {
-            QueueSourceKind::Manual => {
-                self.manual_queue.pop_front();
-            }
-            QueueSourceKind::Automatic => {
-                self.auto_queue.pop_front();
-            }
+    fn discard_next_queued_track(&mut self) {
+        if self.manual_queue.is_empty() {
+            self.auto_queue.pop_front();
+        } else {
+            self.manual_queue.pop_front();
         }
     }
 
@@ -487,13 +462,7 @@ impl Playback {
     /// Add a track to the end of the playback queue.
     pub(crate) fn enqueue(&mut self, track_index: usize) {
         self.manual_queue.push_back(track_index);
-        if self.gapless_active
-            && self
-                .gapless_sources
-                .iter()
-                .find(|source| !source.skip)
-                .is_some_and(|source| source.kind == QueueSourceKind::Automatic)
-        {
+        if self.gapless_active && self.gapless_track.is_some() && !self.gapless_from_manual_queue {
             self.gapless_preempt = true;
         }
     }
@@ -534,8 +503,10 @@ impl Playback {
         let paused = self.paused;
         player.clear();
         self.gapless_active = false;
-        self.gapless_sources.clear();
+        self.gapless_track = None;
+        self.gapless_from_manual_queue = false;
         self.gapless_preempt = false;
+        self.gapless_skip_current = false;
         self.start_track_at(tracks, current, position);
         if paused {
             if let Some(player) = &self.player {
@@ -650,14 +621,9 @@ impl Playback {
             .iter()
             .filter_map(|&index| remap.get(index).copied().flatten())
             .collect();
-        self.gapless_sources = self
-            .gapless_sources
-            .drain(..)
-            .filter_map(|mut source| {
-                source.track_index = remap.get(source.track_index).copied().flatten()?;
-                Some(source)
-            })
-            .collect();
+        self.gapless_track = self
+            .gapless_track
+            .and_then(|index| remap.get(index).copied().flatten());
     }
 
     fn start_track(&mut self, tracks: &[Track], track_index: usize) {
@@ -681,8 +647,10 @@ impl Playback {
                 self.player = Some(player);
                 self.source_count = 1;
                 self.gapless_active = false;
-                self.gapless_sources.clear();
+                self.gapless_track = None;
+                self.gapless_from_manual_queue = false;
                 self.gapless_preempt = false;
+                self.gapless_skip_current = false;
                 self.current = Some(track_index);
                 self.position = position;
                 self.paused = false;
@@ -777,8 +745,10 @@ impl Playback {
         self.paused = false;
         self.source_count = 0;
         self.gapless_active = false;
-        self.gapless_sources.clear();
+        self.gapless_track = None;
+        self.gapless_from_manual_queue = false;
         self.gapless_preempt = false;
+        self.gapless_skip_current = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -802,8 +772,10 @@ impl Default for Playback {
             position: Duration::ZERO,
             paused: false,
             gapless_active: false,
-            gapless_sources: VecDeque::new(),
+            gapless_track: None,
+            gapless_from_manual_queue: false,
             gapless_preempt: false,
+            gapless_skip_current: false,
             source_count: 0,
             shuffle_enabled: false,
             context_tracks: Vec::new(),
