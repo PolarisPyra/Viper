@@ -29,6 +29,8 @@ pub struct Playback {
     position: Duration,
     paused: bool,
     gapless_active: bool,
+    gapless_track: Option<usize>,
+    gapless_from_manual_queue: bool,
     source_count: usize,
     /// Whether upcoming tracks are shuffled.
     pub(crate) shuffle_enabled: bool,
@@ -227,7 +229,17 @@ impl Playback {
                 if let Some(finished_track) = self.current {
                     self.push_history(finished_track);
                 }
-                self.current = self.pop_next_queued_track();
+                self.current = if let Some(track_index) = self.gapless_track.take() {
+                    if self.gapless_from_manual_queue {
+                        self.manual_queue.pop_front();
+                    } else {
+                        self.auto_queue.pop_front();
+                    }
+                    self.gapless_from_manual_queue = false;
+                    Some(track_index)
+                } else {
+                    self.pop_next_queued_track()
+                };
                 self.position = Duration::ZERO;
             }
             self.source_count = source_count;
@@ -311,6 +323,8 @@ impl Playback {
         }
         self.source_count = player.len();
         self.gapless_active = self.source_count > 1;
+        self.gapless_track = self.gapless_active.then_some(track_index);
+        self.gapless_from_manual_queue = self.gapless_active && !self.manual_queue.is_empty();
     }
 
     /// Return manually queued tracks, excluding automatic album and shuffle tracks.
@@ -410,11 +424,8 @@ impl Playback {
     }
 
     /// Add a track to the end of the playback queue.
-    pub(crate) fn enqueue(&mut self, track_index: usize, tracks: &[Track]) {
+    pub(crate) fn enqueue(&mut self, track_index: usize) {
         self.manual_queue.push_back(track_index);
-        if self.gapless_active {
-            self.rebuild_gapless(tracks);
-        }
     }
 
     /// Remove a queued track and return it when the index exists.
@@ -453,6 +464,8 @@ impl Playback {
         let paused = self.paused;
         player.clear();
         self.gapless_active = false;
+        self.gapless_track = None;
+        self.gapless_from_manual_queue = false;
         self.start_track_at(tracks, current, position);
         if paused {
             if let Some(player) = &self.player {
@@ -567,6 +580,9 @@ impl Playback {
             .iter()
             .filter_map(|&index| remap.get(index).copied().flatten())
             .collect();
+        self.gapless_track = self
+            .gapless_track
+            .and_then(|index| remap.get(index).copied().flatten());
     }
 
     fn start_track(&mut self, tracks: &[Track], track_index: usize) {
@@ -590,6 +606,8 @@ impl Playback {
                 self.player = Some(player);
                 self.source_count = 1;
                 self.gapless_active = false;
+                self.gapless_track = None;
+                self.gapless_from_manual_queue = false;
                 self.current = Some(track_index);
                 self.position = position;
                 self.paused = false;
@@ -684,6 +702,8 @@ impl Playback {
         self.paused = false;
         self.source_count = 0;
         self.gapless_active = false;
+        self.gapless_track = None;
+        self.gapless_from_manual_queue = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -707,6 +727,8 @@ impl Default for Playback {
             position: Duration::ZERO,
             paused: false,
             gapless_active: false,
+            gapless_track: None,
+            gapless_from_manual_queue: false,
             source_count: 0,
             shuffle_enabled: false,
             context_tracks: Vec::new(),
