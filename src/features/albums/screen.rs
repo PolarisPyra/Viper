@@ -180,6 +180,14 @@ pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, inde
     ctx.request_repaint();
 }
 
+pub(super) fn play_album(screen: &mut AlbumScreen<'_>, index: usize) {
+    if let Some(album) = screen.library.model.albums.get(index).cloned() {
+        screen
+            .playback
+            .play_album(&album, &screen.library.model.tracks);
+    }
+}
+
 pub(super) fn clear_album_selection(screen: &mut AlbumScreen<'_>) {
     screen.library.view.selected_album = None;
     screen.library.view.selected_track = None;
@@ -197,11 +205,7 @@ pub(super) fn show_album_context_menu(
             .selectable_label(false, egui::RichText::new("Play album").color(colors.text))
             .clicked()
         {
-            if let Some(album) = screen.library.model.albums.get(index).cloned() {
-                screen
-                    .playback
-                    .play_album(&album, &screen.library.model.tracks);
-            }
+            play_album(screen, index);
             ui.close_menu();
         }
         if ui

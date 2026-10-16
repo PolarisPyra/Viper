@@ -3,7 +3,7 @@ use eframe::egui;
 
 use super::{
     album_format_label, clear_album_selection, open_album, paint_cover_with_opacity,
-    paint_format_badge, show_album_context_menu, show_shimmer_rect, AlbumScreen,
+    paint_format_badge, play_album, show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
 const ARTWORK_COLUMN_WIDTH: f32 = 82.0;
@@ -226,7 +226,9 @@ pub(super) fn show_album_list(
             [rect.left_bottom(), rect.right_bottom()],
             egui::Stroke::new(1.0_f32, colors.border),
         );
-        if response.clicked() {
+        if response.double_clicked() {
+            play_album(screen, album_index);
+        } else if response.clicked() {
             open_album(ctx, screen, album_index);
         }
         show_album_context_menu(response, screen, album_index);

@@ -2,7 +2,7 @@ use eframe::egui;
 
 use super::{
     album_format_label, clear_album_selection, open_album, paint_cover_with_opacity,
-    paint_format_badge, show_album_context_menu, show_shimmer_rect, AlbumScreen,
+    paint_format_badge, play_album, show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
 pub(super) fn show_album_rows(
@@ -139,7 +139,9 @@ fn show_album_card(
         },
     );
     let response = response.response.interact(egui::Sense::click());
-    if response.clicked() {
+    if response.double_clicked() {
+        play_album(screen, index);
+    } else if response.clicked() {
         open_album(ctx, screen, index);
     }
     show_album_context_menu(response, screen, index);
