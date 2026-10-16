@@ -28,6 +28,9 @@ symphonia = { version = "0.5.5", features = ["all"] }
 symphonia-adapter-libopus = "0.2"
 discord-rich-presence = "1.1.0"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+md5 = "0.7"
+webbrowser = "1"
+keyring = { version = "4.2", default-features = false, features = ["v1"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

@@ -24,12 +24,14 @@ pub struct Playback {
     player: Option<Player>,
     manual_queue: VecDeque<usize>,
     auto_queue: VecDeque<usize>,
+    return_queue: VecDeque<usize>,
     history: VecDeque<usize>,
     context_tracks: Vec<usize>,
     position: Duration,
     paused: bool,
     gapless_active: bool,
     gapless_track: Option<usize>,
+    gapless_from_return_queue: bool,
     gapless_from_manual_queue: bool,
     gapless_preempt: bool,
     gapless_skip_current: bool,
@@ -236,11 +238,14 @@ impl Playback {
                     }
                 }
                 self.current = if let Some(track_index) = self.gapless_track.take() {
-                    if self.gapless_from_manual_queue {
+                    if self.gapless_from_return_queue {
+                        self.return_queue.pop_front();
+                    } else if self.gapless_from_manual_queue {
                         self.manual_queue.pop_front();
                     } else if !self.gapless_preempt {
                         self.auto_queue.pop_front();
                     }
+                    self.gapless_from_return_queue = false;
                     self.gapless_from_manual_queue = false;
                     Some(track_index)
                 } else {
@@ -329,6 +334,7 @@ impl Playback {
                     self.source_count = player.len();
                     self.gapless_active = self.source_count > 1;
                     self.gapless_track = Some(track_index);
+                    self.gapless_from_return_queue = false;
                     self.gapless_from_manual_queue = true;
                     self.gapless_preempt = false;
                     self.gapless_skip_current = true;
@@ -359,7 +365,9 @@ impl Playback {
         self.source_count = player.len();
         self.gapless_active = self.source_count > 1;
         self.gapless_track = self.gapless_active.then_some(track_index);
-        self.gapless_from_manual_queue = self.gapless_active && !self.manual_queue.is_empty();
+        self.gapless_from_return_queue = self.gapless_active && !self.return_queue.is_empty();
+        self.gapless_from_manual_queue =
+            self.gapless_active && self.return_queue.is_empty() && !self.manual_queue.is_empty();
     }
 
     /// Return manually queued tracks, excluding automatic album and shuffle tracks.
@@ -374,26 +382,31 @@ impl Playback {
 
     /// Return whether Next can play a queued song or repeat the current context.
     pub(crate) fn has_next(&self) -> bool {
-        !self.manual_queue.is_empty()
+        !self.return_queue.is_empty()
+            || !self.manual_queue.is_empty()
             || !self.auto_queue.is_empty()
             || (self.repeat_mode == RepeatMode::All && !self.context_tracks.is_empty())
     }
 
     fn pop_next_queued_track(&mut self) -> Option<usize> {
-        self.manual_queue
+        self.return_queue
             .pop_front()
+            .or_else(|| self.manual_queue.pop_front())
             .or_else(|| self.auto_queue.pop_front())
     }
 
     fn next_queued_track(&self) -> Option<usize> {
-        self.manual_queue
+        self.return_queue
             .front()
+            .or_else(|| self.manual_queue.front())
             .or_else(|| self.auto_queue.front())
             .copied()
     }
 
     fn discard_next_queued_track(&mut self) {
-        if self.manual_queue.is_empty() {
+        if !self.return_queue.is_empty() {
+            self.return_queue.pop_front();
+        } else if self.manual_queue.is_empty() {
             self.auto_queue.pop_front();
         } else {
             self.manual_queue.pop_front();
@@ -434,14 +447,24 @@ impl Playback {
         }
     }
 
-    /// Cycle repeat behavior through off, repeat context, and repeat track.
-    pub(crate) fn cycle_repeat_mode(&mut self, tracks: &[Track]) {
-        self.repeat_mode = match self.repeat_mode {
-            RepeatMode::Off => RepeatMode::All,
-            RepeatMode::All => RepeatMode::One,
-            RepeatMode::One => RepeatMode::Off,
+    /// Toggle repeat for the current album or playback context.
+    pub(crate) fn toggle_repeat_all(&mut self, tracks: &[Track]) {
+        let repeat_mode = if self.repeat_mode == RepeatMode::All {
+            RepeatMode::Off
+        } else {
+            RepeatMode::All
         };
-        if self.repeat_mode != RepeatMode::Off && self.gapless_active {
+        self.set_repeat_mode(repeat_mode, tracks);
+    }
+
+    /// Enable repeat for the currently playing track.
+    pub(crate) fn repeat_current_track(&mut self, tracks: &[Track]) {
+        self.set_repeat_mode(RepeatMode::One, tracks);
+    }
+
+    fn set_repeat_mode(&mut self, repeat_mode: RepeatMode, tracks: &[Track]) {
+        self.repeat_mode = repeat_mode;
+        if repeat_mode != RepeatMode::Off && self.gapless_active {
             self.rebuild_current(tracks);
         }
     }
@@ -461,7 +484,11 @@ impl Playback {
     /// Add a track to the end of the playback queue.
     pub(crate) fn enqueue(&mut self, track_index: usize) {
         self.manual_queue.push_back(track_index);
-        if self.gapless_active && self.gapless_track.is_some() && !self.gapless_from_manual_queue {
+        if self.gapless_active
+            && self.gapless_track.is_some()
+            && !self.gapless_from_return_queue
+            && !self.gapless_from_manual_queue
+        {
             self.gapless_preempt = true;
         }
     }
@@ -507,6 +534,7 @@ impl Playback {
         player.clear();
         self.gapless_active = false;
         self.gapless_track = None;
+        self.gapless_from_return_queue = false;
         self.gapless_from_manual_queue = false;
         self.gapless_preempt = false;
         self.gapless_skip_current = false;
@@ -555,7 +583,7 @@ impl Playback {
             return;
         };
         if let Some(current) = self.current {
-            self.auto_queue.push_front(current);
+            self.return_queue.push_front(current);
         }
         self.stop_current();
         self.start_track(tracks, previous);
@@ -566,6 +594,7 @@ impl Playback {
         self.stop_current();
         self.manual_queue.clear();
         self.auto_queue.clear();
+        self.return_queue.clear();
         self.history.clear();
         self.context_tracks.clear();
     }
@@ -577,6 +606,7 @@ impl Playback {
         self.stop_current();
         self.manual_queue.clear();
         self.auto_queue.clear();
+        self.return_queue.clear();
         self.error = None;
     }
 
@@ -611,6 +641,11 @@ impl Playback {
             .collect();
         self.auto_queue = self
             .auto_queue
+            .drain(..)
+            .filter_map(|index| remap.get(index).copied().flatten())
+            .collect();
+        self.return_queue = self
+            .return_queue
             .drain(..)
             .filter_map(|index| remap.get(index).copied().flatten())
             .collect();
@@ -651,6 +686,7 @@ impl Playback {
                 self.source_count = 1;
                 self.gapless_active = false;
                 self.gapless_track = None;
+                self.gapless_from_return_queue = false;
                 self.gapless_from_manual_queue = false;
                 self.gapless_preempt = false;
                 self.gapless_skip_current = false;
@@ -749,6 +785,7 @@ impl Playback {
         self.source_count = 0;
         self.gapless_active = false;
         self.gapless_track = None;
+        self.gapless_from_return_queue = false;
         self.gapless_from_manual_queue = false;
         self.gapless_preempt = false;
         self.gapless_skip_current = false;
@@ -771,11 +808,13 @@ impl Default for Playback {
             player: None,
             manual_queue: VecDeque::new(),
             auto_queue: VecDeque::new(),
+            return_queue: VecDeque::new(),
             history: VecDeque::new(),
             position: Duration::ZERO,
             paused: false,
             gapless_active: false,
             gapless_track: None,
+            gapless_from_return_queue: false,
             gapless_from_manual_queue: false,
             gapless_preempt: false,
             gapless_skip_current: false,

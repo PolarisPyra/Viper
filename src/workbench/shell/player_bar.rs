@@ -227,8 +227,10 @@ pub(in crate::workbench) fn show(
             if shuffle.clicked() {
                 playback.toggle_shuffle(&library.model.tracks);
             }
-            if repeat.clicked() {
-                playback.cycle_repeat_mode(&library.model.tracks);
+            if repeat.double_clicked() {
+                playback.repeat_current_track(&library.model.tracks);
+            } else if repeat.clicked() {
+                playback.toggle_repeat_all(&library.model.tracks);
             }
             if previous.clicked() {
                 playback.previous(&library.model.tracks);

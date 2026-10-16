@@ -40,6 +40,10 @@ pub(crate) fn show(
         context.preferences,
         context.settings,
         context.library,
+        context.lastfm_service.status(),
+        context.lastfm_service.is_connected(context.lastfm_settings),
+        context.lastfm_settings.username.as_deref(),
+        context.lastfm_service.can_finish_auth(),
         context.error,
     ) {
         match action {
@@ -51,6 +55,18 @@ pub(crate) fn show(
             }
             crate::features::preferences::PreferencesAction::ConnectSmbShare => {
                 actions.push(WorkbenchAction::ConnectSmbShare)
+            }
+            crate::features::preferences::PreferencesAction::SaveLastFmSettings => {
+                actions.push(WorkbenchAction::SaveLastFmSettings)
+            }
+            crate::features::preferences::PreferencesAction::StartLastFmAuth => {
+                actions.push(WorkbenchAction::StartLastFmAuth)
+            }
+            crate::features::preferences::PreferencesAction::FinishLastFmAuth => {
+                actions.push(WorkbenchAction::FinishLastFmAuth)
+            }
+            crate::features::preferences::PreferencesAction::DisconnectLastFm => {
+                actions.push(WorkbenchAction::DisconnectLastFm)
             }
         }
     }

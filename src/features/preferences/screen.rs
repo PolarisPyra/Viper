@@ -8,6 +8,10 @@ pub(crate) enum PreferencesAction {
     ChooseMusicFolder,
     ConnectSmbShare,
     SaveSettings,
+    SaveLastFmSettings,
+    StartLastFmAuth,
+    FinishLastFmAuth,
+    DisconnectLastFm,
 }
 
 pub(crate) fn show(
@@ -16,6 +20,10 @@ pub(crate) fn show(
     preferences: &mut PreferencesState,
     settings: &mut Settings,
     library: &crate::features::library::state::LibraryFeature,
+    lastfm_status: &str,
+    lastfm_connected: bool,
+    lastfm_username: Option<&str>,
+    lastfm_can_finish_auth: bool,
     error: &mut Option<String>,
 ) -> Option<PreferencesAction> {
     let colors = crate::shared::ui::theme::colors(ctx);
@@ -105,7 +113,17 @@ pub(crate) fn show(
                         Category::View => show_view(ui, settings, &mut action),
                         Category::Theme => show_theme(ui, settings, &mut action),
                         Category::Audio => show_audio(ui, settings, &mut action),
-                        Category::Services | Category::About => {}
+                        Category::Services => show_services(
+                            ui,
+                            preferences,
+                            settings,
+                            lastfm_status,
+                            lastfm_connected,
+                            lastfm_username,
+                            lastfm_can_finish_auth,
+                            &mut action,
+                        ),
+                        Category::About => {}
                     }
                 });
         });
@@ -503,6 +521,123 @@ fn show_connections(
             &mut settings.discord_rich_presence_enabled,
             "Show currently playing song as Discord status",
         );
+    });
+    ui.add_space(18.0);
+    ui.label("Discord Application ID");
+    connection_text_edit(
+        ui,
+        &mut preferences.discord_application_id_draft,
+        "Enter your Discord application ID",
+        false,
+    );
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new("Create an application in the Discord Developer Portal and copy its Application ID here.")
+            .size(11.0)
+            .color(colors.muted),
+    );
+    ui.add_space(12.0);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), 38.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            if left_action_button(ui, "Save").clicked() {
+                settings.discord_application_id =
+                    match preferences.discord_application_id_draft.trim() {
+                        "" => None,
+                        id => Some(id.to_owned()),
+                    };
+                *action = Some(PreferencesAction::SaveSettings);
+            }
+        },
+    );
+}
+
+fn show_services(
+    ui: &mut egui::Ui,
+    preferences: &mut PreferencesState,
+    settings: &mut Settings,
+    lastfm_status: &str,
+    lastfm_connected: bool,
+    lastfm_username: Option<&str>,
+    lastfm_can_finish_auth: bool,
+    action: &mut Option<PreferencesAction>,
+) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    ui.set_min_width(420.0);
+    ui.add_space(8.0);
+    section_title(ui, "Last.fm scrobbling");
+    ui.label("Send currently playing tracks and scrobbles to your Last.fm account.");
+    ui.add_space(8.0);
+    if ui
+        .checkbox(
+            &mut settings.lastfm_scrobbling_enabled,
+            "Enable Last.fm scrobbling",
+        )
+        .changed()
+    {
+        *action = Some(PreferencesAction::SaveSettings);
+    }
+    let status = match lastfm_username {
+        Some(username) if lastfm_status == "Not connected" => {
+            format!("Connected as {username}")
+        }
+        Some(username) => format!("Connected as {username} · {lastfm_status}"),
+        None => lastfm_status.to_owned(),
+    };
+    ui.label(egui::RichText::new(status).size(11.0).color(colors.muted));
+    ui.add_space(12.0);
+    ui.label("Last.fm API key");
+    connection_text_edit(
+        ui,
+        &mut preferences.lastfm_api_key_draft,
+        "Enter your API key",
+        false,
+    );
+    ui.add_space(8.0);
+    ui.label("Last.fm shared secret");
+    connection_text_edit(
+        ui,
+        &mut preferences.lastfm_api_secret_draft,
+        "Enter your API shared secret",
+        true,
+    );
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new("Create an API account at last.fm/api/account/create. Credentials and the session key are stored locally.")
+            .size(11.0)
+            .color(colors.muted),
+    );
+    ui.add_space(12.0);
+    ui.horizontal_wrapped(|ui| {
+        if left_action_button(ui, "Save API credentials").clicked() {
+            *action = Some(PreferencesAction::SaveLastFmSettings);
+        }
+        if left_action_button(ui, "Connect Last.fm").clicked() {
+            *action = Some(PreferencesAction::StartLastFmAuth);
+        }
+        if lastfm_can_finish_auth && left_action_button(ui, "Finish sign-in").clicked() {
+            *action = Some(PreferencesAction::FinishLastFmAuth);
+        }
+        if lastfm_connected && left_action_button(ui, "Disconnect").clicked() {
+            *action = Some(PreferencesAction::DisconnectLastFm);
+        }
+    });
+
+    ui.add_space(28.0);
+    section_title(ui, "Discord Rich Presence");
+    ui.label("Show the currently playing song as a rich presence on your Discord profile.");
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x += 6.0;
+        if ui
+            .checkbox(
+                &mut settings.discord_rich_presence_enabled,
+                "Show currently playing song as Discord status",
+            )
+            .changed()
+        {
+            *action = Some(PreferencesAction::SaveSettings);
+        }
     });
     ui.add_space(18.0);
     ui.label("Discord Application ID");

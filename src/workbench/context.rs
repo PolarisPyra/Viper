@@ -16,6 +16,8 @@ pub(crate) struct WorkbenchContext<'a> {
     pub(crate) lyrics: &'a mut LyricsFeature,
     pub(crate) settings: &'a mut Settings,
     pub(crate) preferences: &'a mut PreferencesState,
+    pub(crate) lastfm_service: &'a mut crate::platform::presence::lastfm::LastFmService,
+    pub(crate) lastfm_settings: &'a mut crate::platform::persistence::settings::LastFmSettings,
     pub(crate) artwork_cache: &'a mut ArtworkCache,
     pub(crate) error: &'a mut Option<String>,
 }
@@ -26,4 +28,8 @@ pub(crate) enum WorkbenchAction {
     ChooseMusicFolder,
     SaveSettings,
     ConnectSmbShare,
+    SaveLastFmSettings,
+    StartLastFmAuth,
+    FinishLastFmAuth,
+    DisconnectLastFm,
 }

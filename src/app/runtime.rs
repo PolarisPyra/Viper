@@ -131,6 +131,23 @@ impl eframe::App for ViperApp {
             }
         }
         self.observe_playback_track();
+        if self.lastfm_service.poll(&mut self.lastfm_settings) {
+            if let Err(error) =
+                crate::platform::persistence::settings::save_lastfm_settings(&self.lastfm_settings)
+            {
+                self.error = Some(format!("Could not save Last.fm session: {error}"));
+            }
+        }
+        let current_track_index = self.playback.current;
+        let current_track =
+            current_track_index.and_then(|index| self.library.model.tracks.get(index));
+        self.lastfm_service.update_playback(
+            self.settings.lastfm_scrobbling_enabled,
+            &self.lastfm_settings,
+            current_track_index,
+            current_track,
+            self.playback.position(),
+        );
 
         let current_track = self.playback.current.and_then(|index| {
             let track = self.library.model.tracks.get(index)?;
@@ -161,6 +178,8 @@ impl eframe::App for ViperApp {
                 lyrics: &mut self.lyrics,
                 settings: &mut self.settings,
                 preferences: &mut self.preferences,
+                lastfm_service: &mut self.lastfm_service,
+                lastfm_settings: &mut self.lastfm_settings,
                 artwork_cache: &mut self.artwork_cache,
                 error: &mut self.error,
             };
@@ -174,6 +193,19 @@ impl eframe::App for ViperApp {
                 crate::workbench::WorkbenchAction::ConnectSmbShare => {
                     #[cfg(target_os = "linux")]
                     self.connect_smb_share();
+                }
+                crate::workbench::WorkbenchAction::SaveLastFmSettings => {
+                    self.save_lastfm_settings_from_preferences();
+                }
+                crate::workbench::WorkbenchAction::StartLastFmAuth => {
+                    self.save_lastfm_settings_from_preferences();
+                    self.lastfm_service.start_auth(&self.lastfm_settings);
+                }
+                crate::workbench::WorkbenchAction::FinishLastFmAuth => {
+                    self.lastfm_service.finish_auth(&self.lastfm_settings);
+                }
+                crate::workbench::WorkbenchAction::DisconnectLastFm => {
+                    self.disconnect_lastfm();
                 }
             }
         }

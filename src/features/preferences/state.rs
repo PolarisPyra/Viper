@@ -1,6 +1,8 @@
 pub(crate) struct PreferencesState {
     pub(crate) category: Option<super::screen::Category>,
     pub(crate) discord_application_id_draft: String,
+    pub(crate) lastfm_api_key_draft: String,
+    pub(crate) lastfm_api_secret_draft: String,
     #[cfg(target_os = "linux")]
     pub(crate) smb_url_draft: String,
     #[cfg(target_os = "linux")]
@@ -12,10 +14,16 @@ pub(crate) struct PreferencesState {
 }
 
 impl PreferencesState {
-    pub(crate) fn new(discord_application_id_draft: String) -> Self {
+    pub(crate) fn new(
+        discord_application_id_draft: String,
+        lastfm_api_key_draft: String,
+        lastfm_api_secret_draft: String,
+    ) -> Self {
         Self {
             category: None,
             discord_application_id_draft,
+            lastfm_api_key_draft,
+            lastfm_api_secret_draft,
             #[cfg(target_os = "linux")]
             smb_url_draft: String::new(),
             #[cfg(target_os = "linux")]

@@ -171,6 +171,140 @@ pub fn save_samba_settings(settings: &SambaSettings) -> io::Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Debug, Default)]
+/// Last.fm application credentials and authenticated session.
+pub struct LastFmSettings {
+    /// Last.fm API key registered by the user.
+    pub api_key: SecretString,
+    /// Last.fm API shared secret.
+    pub api_secret: SecretString,
+    /// Session key returned after account authorization.
+    pub session_key: Option<SecretString>,
+    /// Last.fm account name returned after authorization.
+    pub username: Option<String>,
+}
+
+const LASTFM_KEYRING_SERVICE: &str = "viper-music-lastfm";
+
+fn lastfm_keyring_entry(name: &str) -> io::Result<keyring::Entry> {
+    keyring::Entry::new(LASTFM_KEYRING_SERVICE, name)
+        .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))
+}
+
+fn load_lastfm_secret(name: &str, legacy_value: Option<String>) -> io::Result<Option<String>> {
+    let entry = lastfm_keyring_entry(name)?;
+    match entry.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => {
+            let Some(value) = legacy_value.filter(|value| !value.is_empty()) else {
+                return Ok(None);
+            };
+            entry
+                .set_password(&value)
+                .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
+            Ok(Some(value))
+        }
+        Err(error) => Err(io::Error::new(ErrorKind::Other, error.to_string())),
+    }
+}
+
+/// Load Last.fm credentials from the operating system's credential store.
+///
+/// Legacy plaintext SQLite credentials are migrated to the keyring on first load.
+pub fn load_lastfm_settings() -> io::Result<LastFmSettings> {
+    use rusqlite::OptionalExtension;
+
+    let connection = super::database::open()?;
+    let legacy = connection
+        .query_row(
+            "SELECT api_key, api_secret, session_key, username
+             FROM lastfm_settings WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(super::database::database_error)?;
+    let Some(legacy) = legacy else {
+        return Ok(LastFmSettings::default());
+    };
+
+    let needs_migration = !legacy.0.is_empty() || !legacy.1.is_empty() || legacy.2.is_some();
+    let api_key = load_lastfm_secret("api-key", Some(legacy.0))?.unwrap_or_default();
+    let api_secret = load_lastfm_secret("api-secret", Some(legacy.1))?.unwrap_or_default();
+    let session_key = load_lastfm_secret("session-key", legacy.2)?;
+
+    if needs_migration {
+        connection
+            .pragma_update(None, "secure_delete", "ON")
+            .map_err(super::database::database_error)?;
+        connection
+            .execute(
+                "UPDATE lastfm_settings SET api_key = '', api_secret = '', session_key = NULL
+                 WHERE id = 1",
+                [],
+            )
+            .map_err(super::database::database_error)?;
+        connection
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+            .map_err(super::database::database_error)?;
+    }
+
+    Ok(LastFmSettings {
+        api_key: SecretString::from(api_key),
+        api_secret: SecretString::from(api_secret),
+        session_key: session_key.map(SecretString::from),
+        username: legacy.3,
+    })
+}
+
+/// Persist Last.fm API credentials and the authorized session in the OS keyring.
+pub fn save_lastfm_settings(settings: &LastFmSettings) -> io::Result<()> {
+    lastfm_keyring_entry("api-key")?
+        .set_password(settings.api_key.expose_secret())
+        .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
+    lastfm_keyring_entry("api-secret")?
+        .set_password(settings.api_secret.expose_secret())
+        .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
+    let session_entry = lastfm_keyring_entry("session-key")?;
+    if let Some(session_key) = settings.session_key.as_ref() {
+        session_entry
+            .set_password(session_key.expose_secret())
+            .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
+    } else if let Err(error) = session_entry.delete_credential() {
+        if !matches!(error, keyring::Error::NoEntry) {
+            return Err(io::Error::new(ErrorKind::Other, error.to_string()));
+        }
+    }
+
+    let connection = super::database::open()?;
+    connection
+        .pragma_update(None, "secure_delete", "ON")
+        .map_err(super::database::database_error)?;
+    connection
+        .execute(
+            "INSERT INTO lastfm_settings (id, api_key, api_secret, session_key, username)
+             VALUES (1, ?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+                api_key=excluded.api_key,
+                api_secret=excluded.api_secret,
+                session_key=excluded.session_key,
+                username=excluded.username",
+            rusqlite::params!["", "", Option::<String>::None, settings.username,],
+        )
+        .map_err(super::database::database_error)?;
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .map_err(super::database::database_error)?;
+    Ok(())
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 /// Persisted application preferences and library state.
@@ -211,6 +345,8 @@ pub struct Settings {
     pub discord_application_id: Option<String>,
     /// Whether Discord Rich Presence updates are enabled.
     pub discord_rich_presence_enabled: bool,
+    /// Whether Last.fm scrobbling is enabled.
+    pub lastfm_scrobbling_enabled: bool,
     /// Whether to queue decoders for seamless transitions between tracks.
     pub gapless_playback: bool,
     /// Selected album presentation layout.
@@ -244,6 +380,7 @@ impl Default for Settings {
             album_added: BTreeMap::new(),
             discord_application_id: None,
             discord_rich_presence_enabled: true,
+            lastfm_scrobbling_enabled: false,
             gapless_playback: false,
             album_layout: AlbumLayout::Grid,
             album_list_column_widths: [0.50, 0.38, 0.12],
@@ -271,7 +408,8 @@ impl Settings {
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
                         album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                         lyrics_panel_open, discord_rich_presence_enabled,
-                        gapless_playback, album_list_column_widths, album_format_badges
+                        gapless_playback, album_list_column_widths, album_format_badges,
+                        lastfm_scrobbling_enabled
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
@@ -295,6 +433,7 @@ impl Settings {
                         row.get::<_, bool>(16)?,
                         row.get::<_, String>(17)?,
                         row.get::<_, bool>(18)?,
+                        row.get::<_, bool>(19)?,
                     ))
                 },
             )
@@ -321,6 +460,7 @@ impl Settings {
             gapless_playback,
             album_list_column_widths,
             album_format_badges,
+            lastfm_scrobbling_enabled,
         )) = stored
         {
             Self {
@@ -344,6 +484,7 @@ impl Settings {
                 gapless_playback,
                 album_list_column_widths: decode_setting(&album_list_column_widths)?,
                 album_format_badges,
+                lastfm_scrobbling_enabled,
                 ..Self::default()
             }
         } else {
@@ -430,8 +571,9 @@ impl Settings {
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
                 album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                 lyrics_panel_open, discord_rich_presence_enabled,
-                gapless_playback, album_list_column_widths, album_format_badges
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                     gapless_playback, album_list_column_widths, album_format_badges,
+                     lastfm_scrobbling_enabled
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(id) DO UPDATE SET
                 music_path=excluded.music_path, window_width=excluded.window_width,
                 window_height=excluded.window_height, startup_view=excluded.startup_view,
@@ -446,7 +588,8 @@ impl Settings {
                 discord_rich_presence_enabled=excluded.discord_rich_presence_enabled,
                 gapless_playback=excluded.gapless_playback,
                 album_list_column_widths=excluded.album_list_column_widths,
-                album_format_badges=excluded.album_format_badges",
+                album_format_badges=excluded.album_format_badges,
+                lastfm_scrobbling_enabled=excluded.lastfm_scrobbling_enabled",
             rusqlite::params![
                 self.music_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
                 window_width,
@@ -467,6 +610,7 @@ impl Settings {
                 self.gapless_playback,
                 encode_setting(&self.album_list_column_widths)?,
                 self.album_format_badges,
+                self.lastfm_scrobbling_enabled,
             ],
         ).map_err(super::database::database_error)?;
 

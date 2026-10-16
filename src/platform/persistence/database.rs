@@ -266,6 +266,17 @@ pub(crate) fn open() -> io::Result<Connection> {
         transaction.commit().map_err(database_error)?;
     }
 
+    if version < 16 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0016_lastfm.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 16)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
     Ok(connection)
 }
 

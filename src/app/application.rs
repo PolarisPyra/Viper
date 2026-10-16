@@ -1,10 +1,11 @@
 use crate::platform::presence::discord::DiscordPresence;
+use crate::platform::presence::lastfm::LastFmService;
 use crate::{
     features::playback::Playback,
     features::{
         library::state::LibraryFeature, lyrics::LyricsFeature, preferences::PreferencesState,
     },
-    platform::persistence::settings::{Settings, StartupView},
+    platform::persistence::settings::{LastFmSettings, Settings, StartupView},
     shared::artwork::ArtworkCache,
     workbench::{Page, WorkbenchState},
 };
@@ -32,6 +33,8 @@ pub struct ViperApp {
     pub(crate) settings: Settings,
     pub(crate) preferences: PreferencesState,
     discord_presence: DiscordPresence,
+    pub(crate) lastfm_service: LastFmService,
+    pub(crate) lastfm_settings: LastFmSettings,
     last_observed_track: Option<usize>,
     pub(crate) error: Option<String>,
     pub(crate) artwork_cache: ArtworkCache,
@@ -57,13 +60,24 @@ impl ViperApp {
                 Some(format!("Could not read settings: {error}")),
             ),
         };
+        let (lastfm_settings, lastfm_error) =
+            match crate::platform::persistence::settings::load_lastfm_settings() {
+                Ok(settings) => (settings, None),
+                Err(error) => (
+                    LastFmSettings::default(),
+                    Some(format!("Could not read Last.fm settings: {error}")),
+                ),
+            };
         let saved_path = settings.music_path.clone();
         #[cfg(target_os = "linux")]
         let saved_samba = crate::platform::persistence::settings::load_samba_settings()
             .ok()
             .flatten();
-        let mut preferences =
-            PreferencesState::new(settings.discord_application_id.clone().unwrap_or_default());
+        let mut preferences = PreferencesState::new(
+            settings.discord_application_id.clone().unwrap_or_default(),
+            lastfm_settings.api_key.expose_secret().to_owned(),
+            lastfm_settings.api_secret.expose_secret().to_owned(),
+        );
         #[cfg(target_os = "linux")]
         {
             preferences.smb_url_draft = saved_samba
@@ -106,8 +120,10 @@ impl ViperApp {
             settings,
             preferences,
             discord_presence: DiscordPresence::default(),
+            lastfm_service: LastFmService::default(),
+            lastfm_settings,
             last_observed_track: None,
-            error: settings_error,
+            error: settings_error.or(lastfm_error),
             artwork_cache: ArtworkCache::new(),
             last_window_size: None,
             #[cfg(target_os = "linux")]
@@ -194,6 +210,36 @@ impl ViperApp {
     pub(crate) fn save_settings(&mut self) {
         if let Err(error) = self.settings.save() {
             self.error = Some(format!("Could not save settings: {error}"));
+        }
+    }
+
+    pub(crate) fn save_lastfm_settings_from_preferences(&mut self) {
+        let api_key = self.preferences.lastfm_api_key_draft.trim().to_owned();
+        let api_secret = self.preferences.lastfm_api_secret_draft.trim().to_owned();
+        if api_key != self.lastfm_settings.api_key.expose_secret()
+            || api_secret != self.lastfm_settings.api_secret.expose_secret()
+        {
+            self.lastfm_settings.session_key = None;
+            self.lastfm_settings.username = None;
+            self.lastfm_service.disconnect();
+        }
+        self.lastfm_settings.api_key = secrecy::SecretString::from(api_key);
+        self.lastfm_settings.api_secret = secrecy::SecretString::from(api_secret);
+        if let Err(error) =
+            crate::platform::persistence::settings::save_lastfm_settings(&self.lastfm_settings)
+        {
+            self.error = Some(format!("Could not save Last.fm settings: {error}"));
+        }
+    }
+
+    pub(crate) fn disconnect_lastfm(&mut self) {
+        self.lastfm_settings.session_key = None;
+        self.lastfm_settings.username = None;
+        self.lastfm_service.disconnect();
+        if let Err(error) =
+            crate::platform::persistence::settings::save_lastfm_settings(&self.lastfm_settings)
+        {
+            self.error = Some(format!("Could not save Last.fm settings: {error}"));
         }
     }
 
