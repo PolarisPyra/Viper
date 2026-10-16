@@ -166,7 +166,7 @@ pub(super) fn show_album_list(
             }
             paint_cover_with_opacity(ui, cover, cover_rect, cover_opacity);
         } else {
-            show_shimmer_rect(ui, cover_rect, 6.0);
+            ui.painter().rect_filled(cover_rect, 6.0, colors.surface);
             ui.painter().text(
                 cover_rect.center(),
                 egui::Align2::CENTER_CENTER,

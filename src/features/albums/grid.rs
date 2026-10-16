@@ -93,7 +93,7 @@ fn show_album_card(
                             }
                             paint_cover_with_opacity(ui, cover, art, cover_opacity);
                         } else {
-                            show_shimmer_rect(ui, art, 8.0);
+                            ui.painter().rect_filled(art, 8.0, colors.surface);
                             ui.painter().text(
                                 art.center(),
                                 egui::Align2::CENTER_CENTER,
