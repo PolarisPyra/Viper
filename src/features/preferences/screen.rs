@@ -445,7 +445,6 @@ fn show_connections(
     _error: &mut Option<String>,
     action: &mut Option<PreferencesAction>,
 ) {
-    let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.set_min_width(420.0);
     ui.add_space(8.0);
     #[cfg(target_os = "linux")]
@@ -513,44 +512,6 @@ fn show_connections(
         );
         ui.add_space(28.0);
     }
-    section_title(ui, "Discord Rich Presence");
-    ui.label("Show the currently playing song as a rich presence on your Discord profile.");
-    ui.scope(|ui| {
-        ui.spacing_mut().item_spacing.x += 6.0;
-        ui.checkbox(
-            &mut settings.discord_rich_presence_enabled,
-            "Show currently playing song as Discord status",
-        );
-    });
-    ui.add_space(18.0);
-    ui.label("Discord Application ID");
-    connection_text_edit(
-        ui,
-        &mut preferences.discord_application_id_draft,
-        "Enter your Discord application ID",
-        false,
-    );
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new("Create an application in the Discord Developer Portal and copy its Application ID here.")
-            .size(11.0)
-            .color(colors.muted),
-    );
-    ui.add_space(12.0);
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), 38.0),
-        egui::Layout::right_to_left(egui::Align::Center),
-        |ui| {
-            if left_action_button(ui, "Save").clicked() {
-                settings.discord_application_id =
-                    match preferences.discord_application_id_draft.trim() {
-                        "" => None,
-                        id => Some(id.to_owned()),
-                    };
-                *action = Some(PreferencesAction::SaveSettings);
-            }
-        },
-    );
 }
 
 fn show_services(
