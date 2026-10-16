@@ -1,8 +1,8 @@
 use eframe::egui;
 
 use super::{
-    album_format_label, open_album, paint_cover_with_opacity, paint_format_badge,
-    show_album_context_menu, show_shimmer_rect, AlbumScreen,
+    album_format_label, clear_album_selection, open_album, paint_cover_with_opacity,
+    paint_format_badge, show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
 pub(super) fn show_album_rows(
@@ -20,6 +20,14 @@ pub(super) fn show_album_rows(
     let row_step = row_height + ROW_GAP;
     let rows = albums.len().div_ceil(columns);
     let content = ui.max_rect();
+    let background_response = ui.interact(
+        content,
+        ui.id().with("album-grid-background"),
+        egui::Sense::click(),
+    );
+    if background_response.clicked() {
+        clear_album_selection(screen);
+    }
     ui.set_height(TOP_PADDING + rows as f32 * row_step);
     let first = (((viewport.min.y - TOP_PADDING).max(0.0) / row_step).floor() as usize).min(rows);
     let last =

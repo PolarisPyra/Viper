@@ -180,6 +180,12 @@ pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, inde
     ctx.request_repaint();
 }
 
+pub(super) fn clear_album_selection(screen: &mut AlbumScreen<'_>) {
+    screen.library.view.selected_album = None;
+    screen.library.view.selected_track = None;
+    screen.workbench.show_album_details = false;
+}
+
 pub(super) fn show_album_context_menu(
     response: egui::Response,
     screen: &mut AlbumScreen<'_>,
