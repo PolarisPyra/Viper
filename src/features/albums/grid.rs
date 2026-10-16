@@ -2,7 +2,7 @@ use eframe::egui;
 
 use super::{
     album_format_label, open_album, paint_cover_with_opacity, paint_format_badge,
-    show_shimmer_rect, AlbumScreen,
+    show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
 pub(super) fn show_album_rows(
@@ -130,9 +130,11 @@ fn show_album_card(
                 });
         },
     );
-    if response.response.interact(egui::Sense::click()).clicked() {
+    let response = response.response.interact(egui::Sense::click());
+    if response.clicked() {
         open_album(ctx, screen, index);
     }
+    show_album_context_menu(response, screen, index);
 }
 
 pub(super) fn show_skeleton_albums(ctx: &egui::Context, ui: &mut egui::Ui, width: f32) {

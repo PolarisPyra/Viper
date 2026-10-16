@@ -3,7 +3,7 @@ use eframe::egui;
 
 use super::{
     album_format_label, open_album, paint_cover_with_opacity, paint_format_badge,
-    show_shimmer_rect, AlbumScreen,
+    show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
 const ARTWORK_COLUMN_WIDTH: f32 = 82.0;
@@ -221,6 +221,7 @@ pub(super) fn show_album_list(
         if response.clicked() {
             open_album(ctx, screen, album_index);
         }
+        show_album_context_menu(response, screen, album_index);
     }
 }
 
