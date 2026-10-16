@@ -1,7 +1,10 @@
 use crate::platform::persistence::settings::Settings;
 use eframe::egui;
 
-use super::{open_album, paint_cover_with_opacity, show_shimmer_rect, AlbumScreen};
+use super::{
+    album_format_label, open_album, paint_cover_with_opacity, paint_format_badge,
+    show_shimmer_rect, AlbumScreen,
+};
 
 const ARTWORK_COLUMN_WIDTH: f32 = 82.0;
 const MIN_COLUMN_WIDTH: f32 = 64.0;
@@ -152,6 +155,7 @@ pub(super) fn show_album_list(
         let Some(album) = screen.library.model.albums.get(album_index) else {
             continue;
         };
+        let format_label = album_format_label(&screen.library.model, album);
         let cover_rect = egui::Rect::from_min_size(
             egui::pos2(rect.left() + 10.0, rect.center().y - 28.0),
             egui::vec2(56.0, 56.0),
@@ -171,6 +175,7 @@ pub(super) fn show_album_list(
                 colors.muted,
             );
         }
+        paint_format_badge(ui, cover_rect, &format_label);
 
         let columns = column_boundaries(
             rect.left(),

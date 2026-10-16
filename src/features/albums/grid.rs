@@ -1,6 +1,9 @@
 use eframe::egui;
 
-use super::{open_album, paint_cover_with_opacity, show_shimmer_rect, AlbumScreen};
+use super::{
+    album_format_label, open_album, paint_cover_with_opacity, paint_format_badge,
+    show_shimmer_rect, AlbumScreen,
+};
 
 pub(super) fn show_album_rows(
     ctx: &egui::Context,
@@ -67,6 +70,7 @@ fn show_album_card(
     let cover = screen.album_texture(ctx, index);
     let cover_opacity = screen.album_texture_opacity(ctx, index);
     let album = &screen.library.model.albums[index];
+    let format_label = album_format_label(&screen.library.model, album);
     let selected = screen.library.view.selected_album == Some(index);
     let response = ui.allocate_ui_with_layout(
         egui::vec2(card_width, card_height),
@@ -98,6 +102,7 @@ fn show_album_card(
                                 colors.muted,
                             );
                         }
+                        paint_format_badge(ui, art, &format_label);
                     }
                     ui.add_space(9.0);
                     ui.add(
