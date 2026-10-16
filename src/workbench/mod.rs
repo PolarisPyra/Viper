@@ -4,6 +4,7 @@ mod shell;
 mod state;
 
 pub(crate) use context::{WorkbenchAction, WorkbenchContext};
+pub(crate) use shell::menu_bar::style_menu_popup;
 pub(crate) use state::{Page, WorkbenchState};
 
 use eframe::egui;

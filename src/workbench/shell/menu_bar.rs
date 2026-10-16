@@ -588,7 +588,7 @@ fn queue_action_button(
     response.on_hover_text(tooltip)
 }
 
-fn style_menu_popup(ui: &mut egui::Ui) {
+pub(crate) fn style_menu_popup(ui: &mut egui::Ui) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     crate::shared::ui::theme::style_dropdown(ui);
     ui.set_min_width(220.0);

@@ -8,6 +8,7 @@ use crate::{
     workbench::WorkbenchState,
 };
 use eframe::egui;
+use std::{path::Path, process::Command};
 
 #[path = "grid.rs"]
 mod grid;
@@ -173,18 +174,70 @@ fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, 
 }
 
 pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, index: usize) {
-    if screen.library.view.selected_album == Some(index) {
-        if let Some(album) = screen.library.model.albums.get(index).cloned() {
-            screen
-                .playback
-                .play_album(&album, &screen.library.model.tracks);
-        }
-    } else {
-        screen.library.view.selected_track = None;
-        screen.library.view.selected_album = Some(index);
-    }
+    screen.library.view.selected_track = None;
+    screen.library.view.selected_album = Some(index);
     screen.workbench.show_album_details = true;
     ctx.request_repaint();
+}
+
+pub(super) fn show_album_context_menu(
+    response: egui::Response,
+    screen: &mut AlbumScreen<'_>,
+    index: usize,
+) {
+    response.context_menu(|ui| {
+        crate::workbench::style_menu_popup(ui);
+        let colors = crate::shared::ui::theme::colors(ui.ctx());
+        if ui
+            .selectable_label(false, egui::RichText::new("Play album").color(colors.text))
+            .clicked()
+        {
+            if let Some(album) = screen.library.model.albums.get(index).cloned() {
+                screen
+                    .playback
+                    .play_album(&album, &screen.library.model.tracks);
+            }
+            ui.close_menu();
+        }
+        if ui
+            .selectable_label(
+                false,
+                egui::RichText::new("Open in file browser").color(colors.text),
+            )
+            .clicked()
+        {
+            let directory = screen
+                .library
+                .model
+                .albums
+                .get(index)
+                .and_then(|album| album.tracks.first())
+                .and_then(|track_index| screen.library.model.tracks.get(*track_index))
+                .and_then(|track| track.path.parent());
+            match directory {
+                Some(directory) => {
+                    if let Err(error) = open_in_file_browser(directory) {
+                        *screen.error = Some(format!(
+                            "Could not open album folder {}: {error}",
+                            directory.display()
+                        ));
+                    }
+                }
+                None => *screen.error = Some("Could not find the album folder".to_owned()),
+            }
+            ui.close_menu();
+        }
+    });
+}
+
+fn open_in_file_browser(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    let mut command = Command::new("xdg-open");
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer");
+    command.arg(path).spawn().map(|_| ())
 }
 
 pub(super) fn paint_cover_with_opacity(
