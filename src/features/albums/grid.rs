@@ -102,7 +102,9 @@ fn show_album_card(
                                 colors.muted,
                             );
                         }
-                        paint_format_badge(ui, art, &format_label);
+                        if screen.settings.album_format_badges {
+                            paint_format_badge(ui, art, &format_label);
+                        }
                     }
                     ui.add_space(9.0);
                     ui.add(

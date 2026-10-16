@@ -255,6 +255,17 @@ pub(crate) fn open() -> io::Result<Connection> {
         transaction.commit().map_err(database_error)?;
     }
 
+    if version < 15 {
+        let transaction = connection.transaction().map_err(database_error)?;
+        transaction
+            .execute_batch(include_str!("migrations/0015_album_format_badges.sql"))
+            .map_err(database_error)?;
+        transaction
+            .pragma_update(None, "user_version", 15)
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+    }
+
     Ok(connection)
 }
 

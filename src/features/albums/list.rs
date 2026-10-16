@@ -175,7 +175,9 @@ pub(super) fn show_album_list(
                 colors.muted,
             );
         }
-        paint_format_badge(ui, cover_rect, &format_label);
+        if screen.settings.album_format_badges {
+            paint_format_badge(ui, cover_rect, &format_label);
+        }
 
         let columns = column_boundaries(
             rect.left(),

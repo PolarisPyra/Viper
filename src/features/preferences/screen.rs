@@ -401,6 +401,22 @@ fn show_view(ui: &mut egui::Ui, settings: &mut Settings, action: &mut Option<Pre
         .size(12.0)
         .color(colors.muted),
     );
+    ui.add_space(20.0);
+    section_title(ui, "Albums");
+    if ui
+        .checkbox(
+            &mut settings.album_format_badges,
+            "Show album format badges",
+        )
+        .changed()
+    {
+        *action = Some(PreferencesAction::SaveSettings);
+    }
+    ui.label(
+        egui::RichText::new("Show the audio file format on album artwork.")
+            .size(12.0)
+            .color(colors.muted),
+    );
 }
 
 fn show_connections(
