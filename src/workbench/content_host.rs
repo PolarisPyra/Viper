@@ -21,7 +21,6 @@ pub(crate) fn show(
         Page::Albums => {
             if let Some(error) = features::albums::track_list::show(
                 ctx,
-                context.state,
                 context.library,
                 context.playback,
                 context.lyrics,

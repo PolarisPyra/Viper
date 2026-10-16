@@ -2,7 +2,6 @@ use crate::shared::artwork::ArtworkCache;
 use crate::{
     features::{library::state::LibraryFeature, lyrics::LyricsFeature, playback::Playback},
     platform::persistence::settings::Settings,
-    workbench::WorkbenchState,
 };
 use eframe::egui;
 
@@ -11,7 +10,6 @@ const MAX_PANEL_WIDTH: f32 = 520.0;
 
 pub(crate) fn show(
     ctx: &egui::Context,
-    workbench: &mut WorkbenchState,
     library_feature: &mut LibraryFeature,
     playback: &mut Playback,
     lyrics: &mut LyricsFeature,
@@ -19,16 +17,13 @@ pub(crate) fn show(
     artwork_cache: &mut ArtworkCache,
 ) -> Option<String> {
     let colors = crate::shared::ui::theme::colors(ctx);
-    if !workbench.show_album_details {
-        return None;
-    }
-
-    let Some(album_index) = library_feature.view.selected_album else {
-        return None;
+    let Some(album_index) = library_feature
+        .view
+        .selected_album
+        .filter(|index| library_feature.model.albums.get(*index).is_some())
+    else {
+        return show_empty_album_sidebar(ctx, settings);
     };
-    if library_feature.model.albums.get(album_index).is_none() {
-        return None;
-    }
 
     let cover = library_feature
         .model
@@ -73,12 +68,7 @@ pub(crate) fn show(
                         .filter_map(|index| library.tracks.get(*index)?.release_year)
                         .min()
                         .map_or_else(|| "—".to_owned(), |year| year.to_string());
-                    draw_track_panel_heading(
-                        ui,
-                        album.tracks.len(),
-                        &release_year,
-                        &mut workbench.show_album_details,
-                    );
+                    draw_track_panel_heading(ui, album.tracks.len(), &release_year);
                     ui.add_space(15.0);
                     draw_album_summary(
                         ui,
@@ -137,6 +127,77 @@ pub(crate) fn show(
     save_error
 }
 
+fn show_empty_album_sidebar(
+    ctx: &egui::Context,
+    settings: &mut crate::platform::persistence::settings::Settings,
+) -> Option<String> {
+    let colors = crate::shared::ui::theme::colors(ctx);
+    let width = settings
+        .right_panel_width
+        .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+    let output = egui::SidePanel::right("album-tracklist-side-panel")
+        .resizable(true)
+        .width_range(MIN_PANEL_WIDTH..=MAX_PANEL_WIDTH)
+        .default_width(width)
+        .frame(egui::Frame::new().fill(colors.panel).inner_margin(0))
+        .show(ctx, |ui| {
+            draw_track_panel_background(ui);
+            egui::Frame::new()
+                .fill(colors.panel)
+                .inner_margin(egui::Margin::symmetric(20, 18))
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    ui.label(
+                        egui::RichText::new("ALBUM TRACKS")
+                            .size(10.0)
+                            .strong()
+                            .color(colors.subtle),
+                    );
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            ui.available_width(),
+                            (ui.available_height() - 40.0).max(0.0),
+                        ),
+                        egui::Layout::top_down(egui::Align::Center),
+                        |ui| {
+                            ui.add_space(46.0);
+                            let art_rect = ui.allocate_space(egui::vec2(136.0, 136.0)).1;
+                            ui.painter().rect_filled(art_rect, 8.0, colors.surface);
+                            ui.painter().text(
+                                art_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                egui_phosphor::regular::DISC,
+                                egui::FontId::new(40.0, egui::FontFamily::Name("phosphor".into())),
+                                colors.muted,
+                            );
+                            ui.add_space(18.0);
+                            ui.label(
+                                egui::RichText::new("No album loaded")
+                                    .size(16.0)
+                                    .color(colors.text),
+                            );
+                        },
+                    );
+                });
+        });
+
+    let resize_id = egui::Id::new("album-tracklist-side-panel").with("__resize");
+    if ctx
+        .read_response(resize_id)
+        .is_some_and(|response| response.drag_stopped_by(egui::PointerButton::Primary))
+    {
+        settings.right_panel_width = output
+            .response
+            .rect
+            .width()
+            .clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+        return save_settings(settings);
+    }
+    None
+}
+
 fn draw_track_panel_background(ui: &egui::Ui) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     let rect = ui.max_rect();
@@ -147,12 +208,7 @@ fn draw_track_panel_background(ui: &egui::Ui) {
     );
 }
 
-fn draw_track_panel_heading(
-    ui: &mut egui::Ui,
-    track_count: usize,
-    release_year: &str,
-    open: &mut bool,
-) {
+fn draw_track_panel_heading(ui: &mut egui::Ui, track_count: usize, release_year: &str) {
     let colors = crate::shared::ui::theme::colors(ui.ctx());
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
@@ -177,25 +233,6 @@ fn draw_track_panel_heading(
                         .color(colors.muted),
                 );
             });
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::click());
-            draw_action_hover(ui, rect, response.hovered());
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                egui_phosphor::regular::X,
-                egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
-                if response.hovered() {
-                    colors.text
-                } else {
-                    colors.muted
-                },
-            );
-            if response.on_hover_text("Close album tracks").clicked() {
-                *open = false;
-            }
         });
     });
 }
