@@ -1,6 +1,9 @@
 use crate::shared::artwork::ArtworkCache;
 use crate::{
-    features::{library::state::LibraryFeature, playback::Playback},
+    features::{
+        library::{state::LibraryFeature, Album, Library},
+        playback::Playback,
+    },
     platform::persistence::settings::{AlbumLayout, Settings},
     workbench::WorkbenchState,
 };
@@ -18,6 +21,45 @@ pub(crate) struct AlbumScreen<'a> {
     pub(crate) settings: &'a mut Settings,
     pub(crate) artwork_cache: &'a mut ArtworkCache,
     pub(crate) error: &'a mut Option<String>,
+}
+
+pub(super) fn album_format_label(library: &Library, album: &Album) -> String {
+    let mut format = None;
+    for track_index in &album.tracks {
+        let Some(track) = library.tracks.get(*track_index) else {
+            continue;
+        };
+        let extension = track
+            .path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("other")
+            .to_ascii_lowercase();
+        if format.as_deref().is_some_and(|first| first != extension) {
+            return "MIXED".to_owned();
+        }
+        format.get_or_insert(extension);
+    }
+    format.map_or_else(
+        || "OTHER".to_owned(),
+        |extension| extension.to_ascii_uppercase(),
+    )
+}
+
+pub(super) fn paint_format_badge(ui: &egui::Ui, cover: egui::Rect, label: &str) {
+    let colors = crate::shared::ui::theme::colors(ui.ctx());
+    let font = egui::FontId::proportional(9.0);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, colors.text);
+    let badge_size = galley.size() + egui::vec2(8.0, 4.0);
+    let badge = egui::Rect::from_min_size(
+        egui::pos2(cover.left() + 4.0, cover.bottom() - badge_size.y - 4.0),
+        badge_size,
+    );
+    ui.painter().rect_filled(badge, 3.0, colors.surface);
+    ui.painter()
+        .galley(badge.center() - galley.size() * 0.5, galley, colors.text);
 }
 
 impl AlbumScreen<'_> {
