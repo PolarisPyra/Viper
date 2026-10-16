@@ -141,26 +141,6 @@ pub(crate) fn scan_library_with_auth(
         return Library::default();
     }
     #[cfg(target_os = "linux")]
-    let smb_session = if is_smb {
-        let Some(auth) = smb_auth.as_ref() else {
-            return Library {
-                scan_error: Some("Reconnect to the SMB share before scanning".into()),
-                ..Library::default()
-            };
-        };
-        match super::smb::SmbSession::new(&root.to_string_lossy(), auth) {
-            Ok(session) => Some(session),
-            Err(error) => {
-                return Library {
-                    scan_error: Some(format!("Could not open SMB share for scanning: {error}")),
-                    ..Library::default()
-                };
-            }
-        }
-    } else {
-        None
-    };
-    #[cfg(target_os = "linux")]
     let mut smb_album_art: HashMap<(String, String), Arc<[u8]>> = HashMap::new();
     progress.phase.store(1, Ordering::Relaxed);
     progress.total.store(audio_paths.len(), Ordering::Relaxed);
@@ -186,53 +166,121 @@ pub(crate) fn scan_library_with_auth(
     let worker_count = std::thread::available_parallelism().map_or(4, |count| count.get().min(8));
     #[cfg(target_os = "linux")]
     let scanned: Vec<_> = if is_smb {
-        let session = smb_session
-            .as_ref()
-            .expect("SMB scan session was initialized");
+        let Some(auth) = smb_auth.as_ref() else {
+            return Library {
+                scan_error: Some("Reconnect to the SMB share before scanning".into()),
+                ..Library::default()
+            };
+        };
+        let smb_root = root.to_string_lossy().into_owned();
         let smb_cache = super::smb_cache::SmbMetadataCache::load(root);
         let mut refreshed_smb_cache = super::smb_cache::SmbMetadataCache::default();
         let mut cache_changed = false;
         let mut scanned = Vec::with_capacity(audio_paths.len());
-        for path in &audio_paths {
+        let scan_smb_path = |session: &mut Option<Result<super::smb::SmbSession, String>>,
+                             path: &PathBuf| {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            let fingerprint = smb_fingerprints.get(path);
+            if let Some((track, artwork)) =
+                fingerprint.and_then(|fingerprint| smb_cache.get(path, fingerprint))
+            {
+                return Some((
+                    track,
+                    artwork,
+                    fingerprint.cloned(),
+                    true,
+                    None,
+                    false,
+                    false,
+                ));
+            }
+
+            let session = session.get_or_insert_with(|| {
+                super::smb::SmbSession::new(&smb_root, auth).map_err(|error| error.to_string())
+            });
+            let (mut metadata, cacheable, error, skipped_empty) = match session {
+                Ok(session) => match session.read_metadata(path) {
+                    Ok(metadata) => (metadata, true, None, false),
+                    Err(super::tag_reader::ReaderMetadataError::Empty) => {
+                        (super::tag_reader::empty_metadata(), false, None, true)
+                    }
+                    Err(super::tag_reader::ReaderMetadataError::Failed(error)) => (
+                        super::tag_reader::empty_metadata(),
+                        false,
+                        Some(error),
+                        false,
+                    ),
+                },
+                Err(error) => (
+                    super::tag_reader::empty_metadata(),
+                    false,
+                    Some(format!("Could not open SMB share for scanning: {error}")),
+                    false,
+                ),
+            };
+            let artwork = metadata.artwork.take().map(Arc::<[u8]>::from);
+            Some((
+                track_from_metadata(path.clone(), metadata),
+                artwork,
+                fingerprint.cloned(),
+                cacheable,
+                error,
+                skipped_empty,
+                true,
+            ))
+        };
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count.min(4))
+            .build();
+        let results: Vec<_> = match pool {
+            Ok(pool) => pool.install(|| {
+                audio_paths
+                    .par_iter()
+                    .map_init(|| None, |session, path| scan_smb_path(session, path))
+                    .collect()
+            }),
+            Err(_) => {
+                let mut session = None;
+                audio_paths
+                    .iter()
+                    .map(|path| scan_smb_path(&mut session, path))
+                    .collect()
+            }
+        };
+        for result in results {
             if cancel.load(Ordering::Relaxed) {
                 return Library::default();
             }
-            let fingerprint = smb_fingerprints.get(path);
-            let cached = fingerprint.and_then(|fingerprint| smb_cache.get(path, fingerprint));
-            let (mut track, embedded_art, cacheable) = if let Some((track, artwork)) = cached {
-                (track, artwork, true)
-            } else {
-                cache_changed = true;
-                let (mut metadata, cacheable) = match session.read_metadata(path) {
-                    Ok(metadata) => (metadata, true),
-                    Err(super::tag_reader::ReaderMetadataError::Empty) => {
-                        skipped_empty_files.push(path.clone());
-                        progress.completed.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                    Err(super::tag_reader::ReaderMetadataError::Failed(error)) => {
-                        scan_errors.push(format!(
-                            "Could not read tags from SMB track {}: {error}",
-                            path.file_name().unwrap_or_default().to_string_lossy()
-                        ));
-                        (super::tag_reader::empty_metadata(), false)
-                    }
-                };
-                let artwork = metadata.artwork.take().map(Arc::<[u8]>::from);
-                (
-                    track_from_metadata(path.clone(), metadata),
-                    artwork,
-                    cacheable,
-                )
+            let Some((
+                mut track,
+                embedded_art,
+                fingerprint,
+                cacheable,
+                error,
+                skipped_empty,
+                cache_miss,
+            )) = result
+            else {
+                continue;
             };
+            cache_changed |= cache_miss;
+            if skipped_empty {
+                skipped_empty_files.push(track.path.clone());
+                progress.completed.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            if let Some(error) = error {
+                scan_errors.push(format!(
+                    "Could not read tags from SMB track {}: {error}",
+                    track.path.file_name().unwrap_or_default().to_string_lossy()
+                ));
+            }
             // Failures must be retried on the next scan rather than becoming cache hits.
             if cacheable {
                 if let Some(fingerprint) = fingerprint {
-                    refreshed_smb_cache.insert(
-                        fingerprint.clone(),
-                        track.clone(),
-                        embedded_art.clone(),
-                    );
+                    refreshed_smb_cache.insert(fingerprint, track.clone(), embedded_art.clone());
                 }
             }
             fill_missing_display_metadata(&mut track);
