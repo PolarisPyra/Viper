@@ -211,6 +211,20 @@ pub(super) fn show_album_context_menu(
         if ui
             .selectable_label(
                 false,
+                egui::RichText::new("Add album to queue").color(colors.text),
+            )
+            .clicked()
+        {
+            if let Some(album) = screen.library.model.albums.get(index) {
+                for &track_index in &album.tracks {
+                    screen.playback.enqueue(track_index);
+                }
+            }
+            ui.close_menu();
+        }
+        if ui
+            .selectable_label(
+                false,
                 egui::RichText::new("Open in file browser").color(colors.text),
             )
             .clicked()
