@@ -238,8 +238,10 @@ impl Playback {
                 self.current = if let Some(track_index) = self.gapless_track.take() {
                     if self.gapless_from_manual_queue {
                         self.manual_queue.pop_front();
-                    } else {
+                    } else if !self.gapless_preempt {
                         self.auto_queue.pop_front();
+                    } else {
+                        // Keep the preloaded album track queued after the manual tracks.
                     }
                     self.gapless_from_manual_queue = false;
                     Some(track_index)
@@ -399,6 +401,21 @@ impl Playback {
         } else {
             self.manual_queue.pop_front();
         }
+    }
+
+    pub(crate) fn gapless_preemption_near_end(&self, tracks: &[Track]) -> bool {
+        if !self.gapless_preempt || self.paused {
+            return false;
+        }
+        let Some(duration_ms) = self
+            .current
+            .and_then(|index| tracks.get(index))
+            .and_then(|track| track.duration_ms)
+        else {
+            return false;
+        };
+        Duration::from_millis(duration_ms).saturating_sub(self.position())
+            <= Duration::from_millis(250)
     }
 
     /// Toggle shuffle mode and reorder the tracks waiting in the queue.
