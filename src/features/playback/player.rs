@@ -1,6 +1,19 @@
 use crate::features::library::{Album, Track};
 use rodio::{Decoder, MixerDeviceSink, Player};
-use std::{collections::VecDeque, fs::File, io::BufReader, path::Path, time::Duration};
+use std::{
+    collections::VecDeque,
+    fs::File,
+    io::BufReader,
+    path::Path,
+    sync::mpsc::{self, Receiver, TryRecvError},
+    time::Duration,
+};
+
+struct GaplessPreparation {
+    track_index: usize,
+    preempt: bool,
+    receiver: Receiver<Result<Decoder<BufReader<File>>, String>>,
+}
 
 /// Repeat behavior for the current track or playback context.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -36,6 +49,7 @@ pub struct Playback {
     gapless_preempt: bool,
     gapless_skip_current: bool,
     source_count: usize,
+    gapless_preparation: Option<GaplessPreparation>,
     /// Whether upcoming tracks are shuffled.
     pub(crate) shuffle_enabled: bool,
     /// Repeat mode for the current song or listening context.
@@ -306,68 +320,156 @@ impl Playback {
     /// * `enabled` - Whether gapless transitions should be active.
     pub fn update_gapless(&mut self, tracks: &[Track], enabled: bool) {
         if !enabled {
+            self.gapless_preparation = None;
             if self.gapless_active {
                 self.rebuild_current(tracks);
             }
             return;
         }
-        if self.gapless_active || self.current.is_none() {
+        if self.current.is_none() {
             return;
+        }
+        if self.gapless_active {
+            if self.gapless_preempt {
+                self.rebuild_current(tracks);
+            } else {
+                return;
+            }
         }
         let Some(player) = self.player.as_ref() else {
             return;
         };
-        if self.gapless_preempt {
-            let Some(track_index) = self.manual_queue.front().copied() else {
-                self.gapless_preempt = false;
-                return;
-            };
-            let Some(track) = tracks.get(track_index) else {
-                self.manual_queue.pop_front();
-                self.gapless_preempt = false;
-                return;
-            };
-            match self.open_decoder(&track.path) {
-                Ok(decoder) => {
-                    player.append(decoder);
-                    player.skip_one();
-                    self.source_count = player.len();
-                    self.gapless_active = self.source_count > 1;
-                    self.gapless_track = Some(track_index);
-                    self.gapless_from_return_queue = false;
-                    self.gapless_from_manual_queue = true;
-                    self.gapless_preempt = false;
-                    self.gapless_skip_current = true;
+
+        let preempt = self.gapless_preempt;
+        let next_track = if preempt {
+            self.manual_queue.front().copied()
+        } else {
+            self.next_queued_track()
+        };
+        if let Some(preparation) = self.gapless_preparation.take() {
+            match preparation.receiver.try_recv() {
+                Err(TryRecvError::Empty) => {
+                    self.gapless_preparation = Some(preparation);
+                    return;
                 }
-                Err(error) => {
-                    self.manual_queue.pop_front();
-                    self.gapless_preempt = false;
-                    self.error = Some(error);
+                Err(TryRecvError::Disconnected) => {
+                    if next_track == Some(preparation.track_index) && preempt == preparation.preempt
+                    {
+                        if preparation.preempt {
+                            self.manual_queue.pop_front();
+                            self.gapless_preempt = false;
+                        } else {
+                            self.discard_next_queued_track();
+                        }
+                        self.error = Some("Could not prepare the next audio track".to_owned());
+                    }
+                    return;
+                }
+                Ok(result) => {
+                    let is_current = next_track == Some(preparation.track_index)
+                        && preempt == preparation.preempt;
+                    if is_current {
+                        match result {
+                            Ok(decoder) => {
+                                let current_source_present = !player.empty();
+                                player.append(decoder);
+                                if preparation.preempt && current_source_present {
+                                    player.skip_one();
+                                }
+                                self.source_count = player.len();
+                                self.gapless_active = self.source_count > 1;
+                                self.gapless_track =
+                                    self.gapless_active.then_some(preparation.track_index);
+                                self.gapless_from_return_queue = self.gapless_active
+                                    && !preparation.preempt
+                                    && !self.return_queue.is_empty();
+                                self.gapless_from_manual_queue = self.gapless_active
+                                    && (preparation.preempt
+                                        || (self.return_queue.is_empty()
+                                            && !self.manual_queue.is_empty()));
+                                self.gapless_preempt = false;
+                                self.gapless_skip_current = preparation.preempt;
+                                if !current_source_present {
+                                    if let Some(finished_track) = self.current {
+                                        if !preparation.preempt {
+                                            self.push_history(finished_track);
+                                        }
+                                    }
+                                    self.current = Some(preparation.track_index);
+                                    if preparation.preempt {
+                                        self.manual_queue.pop_front();
+                                    } else {
+                                        self.pop_next_queued_track();
+                                    }
+                                    self.position = Duration::ZERO;
+                                    self.gapless_track = None;
+                                    self.gapless_from_return_queue = false;
+                                    self.gapless_from_manual_queue = false;
+                                    self.gapless_skip_current = false;
+                                }
+                                return;
+                            }
+                            Err(error) => {
+                                if preparation.preempt {
+                                    self.manual_queue.pop_front();
+                                    self.gapless_preempt = false;
+                                } else {
+                                    self.discard_next_queued_track();
+                                }
+                                self.error = Some(error);
+                                return;
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        if self.gapless_active {
             return;
         }
-        let Some(track_index) = self.next_queued_track() else {
+        let Some(track_index) = (if self.gapless_preempt {
+            self.manual_queue.front().copied()
+        } else {
+            self.next_queued_track()
+        }) else {
             return;
         };
         let Some(track) = tracks.get(track_index) else {
-            self.discard_next_queued_track();
+            if self.gapless_preempt {
+                self.manual_queue.pop_front();
+                self.gapless_preempt = false;
+            } else {
+                self.discard_next_queued_track();
+            }
             return;
         };
-        match self.open_decoder(&track.path) {
-            Ok(decoder) => player.append(decoder),
+        let path = track.path.clone();
+        #[cfg(target_os = "linux")]
+        let smb_auth = self.smb_auth.clone();
+        let (sender, receiver) = mpsc::channel();
+        let worker = std::thread::Builder::new()
+            .name("music-gapless-prepare".to_owned())
+            .spawn(move || {
+                let result = Self::open_decoder_with_auth(
+                    &path,
+                    #[cfg(target_os = "linux")]
+                    smb_auth.as_ref(),
+                );
+                let _ = sender.send(result);
+            });
+        match worker {
+            Ok(_) => {
+                self.gapless_preparation = Some(GaplessPreparation {
+                    track_index,
+                    preempt: self.gapless_preempt,
+                    receiver,
+                });
+            }
             Err(error) => {
-                self.discard_next_queued_track();
-                self.error = Some(error);
-                return;
+                self.error = Some(format!("Could not prepare next audio track: {error}"));
             }
         }
-        self.source_count = player.len();
-        self.gapless_active = self.source_count > 1;
-        self.gapless_track = self.gapless_active.then_some(track_index);
-        self.gapless_from_return_queue = self.gapless_active && !self.return_queue.is_empty();
-        self.gapless_from_manual_queue =
-            self.gapless_active && self.return_queue.is_empty() && !self.manual_queue.is_empty();
     }
 
     /// Return manually queued tracks, excluding automatic album and shuffle tracks.
@@ -497,6 +599,10 @@ impl Playback {
         self.gapless_preempt
     }
 
+    pub(crate) fn gapless_preparation_pending(&self) -> bool {
+        self.gapless_preparation.is_some()
+    }
+
     /// Remove a queued track and return it when the index exists.
     pub(crate) fn remove_queued(&mut self, queue_index: usize, tracks: &[Track]) -> Option<usize> {
         let removed = self.manual_queue.remove(queue_index);
@@ -525,6 +631,7 @@ impl Playback {
     }
 
     fn rebuild_current(&mut self, tracks: &[Track]) {
+        self.gapless_preparation = None;
         let (Some(current), Some(player)) = (self.current, self.player.take()) else {
             self.gapless_active = false;
             return;
@@ -625,6 +732,7 @@ impl Playback {
     /// # Arguments
     /// * `remap` - Old-to-new track index mapping; `None` marks a removed track.
     pub fn remap_tracks(&mut self, remap: &[Option<usize>]) {
+        self.gapless_preparation = None;
         if let Some(current) = self.current {
             match remap.get(current).copied().flatten() {
                 Some(index) => self.current = Some(index),
@@ -726,9 +834,20 @@ impl Playback {
     }
 
     fn open_decoder(&self, path: &Path) -> Result<Decoder<BufReader<File>>, String> {
+        Self::open_decoder_with_auth(
+            path,
+            #[cfg(target_os = "linux")]
+            self.smb_auth.as_ref(),
+        )
+    }
+
+    fn open_decoder_with_auth(
+        path: &Path,
+        #[cfg(target_os = "linux")] smb_auth: Option<&crate::features::library::smb::SmbAuth>,
+    ) -> Result<Decoder<BufReader<File>>, String> {
         #[cfg(target_os = "linux")]
         let staged_path = if crate::features::library::smb::is_smb_path(path) {
-            let auth = self.smb_auth.as_ref().ok_or_else(|| {
+            let auth = smb_auth.ok_or_else(|| {
                 "Reconnect to the SMB share in Preferences to play this track".to_owned()
             })?;
             Some(
@@ -778,6 +897,7 @@ impl Playback {
     }
 
     fn stop_current(&mut self) {
+        self.gapless_preparation = None;
         self.player = None;
         self.current = None;
         self.position = Duration::ZERO;
@@ -819,6 +939,7 @@ impl Default for Playback {
             gapless_preempt: false,
             gapless_skip_current: false,
             source_count: 0,
+            gapless_preparation: None,
             shuffle_enabled: false,
             context_tracks: Vec::new(),
             repeat_mode: RepeatMode::Off,
