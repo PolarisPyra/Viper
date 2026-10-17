@@ -143,9 +143,7 @@ impl eframe::App for ViperApp {
                 self.settings.gapless_playback && !repeat_one,
             );
             if playback.current.is_some() {
-                let repaint_interval = if playback.gapless_preemption_pending()
-                    || playback.gapless_preparation_pending()
-                {
+                let repaint_interval = if playback.gapless_preparation_pending() {
                     Duration::from_millis(16)
                 } else if self.settings.gapless_playback && playback.has_next() && !repeat_one {
                     Duration::from_millis(100)
