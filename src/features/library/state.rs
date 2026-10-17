@@ -67,6 +67,7 @@ impl LibraryFeature {
         self.model = Library::default();
         self.view.album_filter_dirty = true;
         self.view.selected_album = None;
+        self.view.highlighted_album = None;
         self.scanning = true;
         match self.background.start_scan(
             root,
@@ -146,6 +147,7 @@ impl LibraryFeature {
         });
         if selected_album_cleared {
             self.view.selected_album = None;
+            self.view.highlighted_album = None;
         }
 
         let removed_any = track_remap.iter().any(Option::is_none);
@@ -178,6 +180,7 @@ pub(crate) enum ScanCompletion {
 pub(crate) struct LibraryViewState {
     pub(crate) search: String,
     pub(crate) selected_album: Option<usize>,
+    pub(crate) highlighted_album: Option<usize>,
     pub(crate) selected_track: Option<usize>,
     pub(crate) album_sort_dirty: bool,
     pub(crate) album_filter_query: String,
@@ -191,6 +194,7 @@ impl LibraryViewState {
         Self {
             search: String::new(),
             selected_album: None,
+            highlighted_album: None,
             selected_track: None,
             album_sort_dirty: true,
             album_filter_query: String::new(),

@@ -111,6 +111,11 @@ fn show_grid(
     albums: &[usize],
     page: std::ops::Range<usize>,
 ) {
+    let background_response = ui.interact(
+        ui.max_rect(),
+        ui.id().with("album-panel-background"),
+        egui::Sense::click(),
+    );
     ui.spacing_mut().scroll.bar_outer_margin = 10.0;
     ui.spacing_mut().scroll.dormant_background_opacity = 0.0;
     ui.spacing_mut().scroll.active_background_opacity = 0.0;
@@ -146,6 +151,9 @@ fn show_grid(
                 }
             }
         });
+    if background_response.clicked() {
+        clear_album_selection(screen);
+    }
 }
 
 fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, width: f32) {
@@ -176,6 +184,7 @@ fn show_empty(ctx: &egui::Context, ui: &mut egui::Ui, screen: &AlbumScreen<'_>, 
 pub(super) fn open_album(ctx: &egui::Context, screen: &mut AlbumScreen<'_>, index: usize) {
     screen.library.view.selected_track = None;
     screen.library.view.selected_album = Some(index);
+    screen.library.view.highlighted_album = Some(index);
     screen.workbench.show_album_details = true;
     ctx.request_repaint();
 }
@@ -189,8 +198,7 @@ pub(super) fn play_album(screen: &mut AlbumScreen<'_>, index: usize) {
 }
 
 pub(super) fn clear_album_selection(screen: &mut AlbumScreen<'_>) {
-    screen.library.view.selected_album = None;
-    screen.library.view.selected_track = None;
+    screen.library.view.highlighted_album = None;
 }
 
 pub(super) fn show_album_context_menu(

@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use super::{
-    album_format_label, clear_album_selection, open_album, paint_cover_with_opacity,
+    album_format_label, open_album, paint_cover_with_opacity,
     paint_format_badge, play_album, show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
@@ -20,14 +20,6 @@ pub(super) fn show_album_rows(
     let row_step = row_height + ROW_GAP;
     let rows = albums.len().div_ceil(columns);
     let content = ui.max_rect();
-    let background_response = ui.interact(
-        content,
-        ui.id().with("album-grid-background"),
-        egui::Sense::click(),
-    );
-    if background_response.clicked() {
-        clear_album_selection(screen);
-    }
     ui.set_height(TOP_PADDING + rows as f32 * row_step);
     let first = (((viewport.min.y - TOP_PADDING).max(0.0) / row_step).floor() as usize).min(rows);
     let last =
@@ -79,7 +71,7 @@ fn show_album_card(
     let cover_opacity = screen.album_texture_opacity(ctx, index);
     let album = &screen.library.model.albums[index];
     let format_label = album_format_label(&screen.library.model, album);
-    let selected = screen.library.view.selected_album == Some(index);
+    let selected = screen.library.view.highlighted_album == Some(index);
     let response = ui.allocate_ui_with_layout(
         egui::vec2(card_width, card_height),
         egui::Layout::top_down(egui::Align::Min),

@@ -2,7 +2,7 @@ use crate::platform::persistence::settings::Settings;
 use eframe::egui;
 
 use super::{
-    album_format_label, clear_album_selection, open_album, paint_cover_with_opacity,
+    album_format_label, open_album, paint_cover_with_opacity,
     paint_format_badge, play_album, show_album_context_menu, show_shimmer_rect, AlbumScreen,
 };
 
@@ -122,14 +122,6 @@ pub(super) fn show_album_list(
     let rows = albums.len();
     let content = ui.max_rect();
     let rows_top = content.top();
-    let background_response = ui.interact(
-        content,
-        ui.id().with("album-list-background"),
-        egui::Sense::click(),
-    );
-    if background_response.clicked() {
-        clear_album_selection(screen);
-    }
     ui.set_height(rows as f32 * row_step);
     let first = ((viewport.min.y.max(0.0) / row_step).floor() as usize).min(rows);
     let last = ((viewport.max.y.max(0.0) / row_step).ceil() as usize + 1).min(rows);
@@ -140,7 +132,7 @@ pub(super) fn show_album_list(
             egui::pos2(content.left() + 8.0, rows_top + row as f32 * row_step),
             egui::vec2((width - 16.0).max(0.0), ROW_HEIGHT),
         );
-        let selected = screen.library.view.selected_album == Some(album_index);
+        let selected = screen.library.view.highlighted_album == Some(album_index);
         let response = ui.interact(
             rect,
             ui.id().with(("album-list-row", album_index)),

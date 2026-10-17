@@ -461,6 +461,7 @@ fn album_section(
                     if response.clicked() {
                         view.library.view.selected_track = None;
                         view.library.view.selected_album = Some(index);
+                        view.library.view.highlighted_album = Some(index);
                         view.workbench.show_album_details = true;
                         view.workbench.page = Page::Albums;
                         ctx.request_repaint();
