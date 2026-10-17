@@ -347,6 +347,7 @@ fn show_queue_popup(
     );
     let content_size = (panel_size - egui::vec2(36.0, 36.0)).max(egui::Vec2::ZERO);
     let mut close_requested = false;
+    let mut clear_requested = false;
 
     let response = egui::Modal::new(egui::Id::new("playback-queue-modal"))
         .frame(
@@ -358,8 +359,11 @@ fn show_queue_popup(
         )
         .backdrop_color(colors.backdrop)
         .show(ctx, |ui| {
-            ui.set_min_size(content_size);
-            ui.set_max_size(content_size);
+            ui.set_min_width(content_size.x);
+            ui.set_max_width(content_size.x);
+            if playback.queue().len() > 8 {
+                ui.set_min_height(content_size.y);
+            }
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.label(
@@ -403,44 +407,67 @@ fn show_queue_popup(
             ui.add_space(16.0);
             ui.separator();
             ui.add_space(12.0);
-
-            if let Some(current) = playback
-                .current
-                .and_then(|index| library.model.tracks.get(index))
-            {
-                egui::Frame::new()
-                    .fill(colors.surface)
-                    .stroke(egui::Stroke::new(1.0_f32, colors.border))
-                    .corner_radius(9.0)
-                    .inner_margin(egui::Margin::symmetric(12, 10))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("NOW PLAYING")
-                                .size(10.0)
-                                .strong()
-                                .color(colors.accent),
-                        );
-                        ui.add_space(3.0);
-                        ui.label(
-                            egui::RichText::new(&current.title)
-                                .size(13.0)
-                                .strong()
-                                .color(colors.text),
-                        );
-                        ui.label(
-                            egui::RichText::new(&current.artist)
-                                .size(11.0)
-                                .color(colors.muted),
-                        );
-                    });
-                ui.add_space(12.0);
-            }
+            ui.horizontal(|ui| {
+                if let Some(current) = playback
+                    .current
+                    .and_then(|index| library.model.tracks.get(index))
+                {
+                    egui::Frame::new()
+                        .fill(colors.surface)
+                        .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                        .corner_radius(9.0)
+                        .inner_margin(egui::Margin::symmetric(12, 10))
+                        .show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("NOW PLAYING")
+                                        .size(10.0)
+                                        .strong()
+                                        .color(colors.accent),
+                                );
+                                ui.add_space(3.0);
+                                ui.label(
+                                    egui::RichText::new(&current.title)
+                                        .size(13.0)
+                                        .strong()
+                                        .color(colors.text),
+                                );
+                                ui.label(
+                                    egui::RichText::new(&current.artist)
+                                        .size(11.0)
+                                        .color(colors.muted),
+                                );
+                            });
+                        });
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let clear_button =
+                        egui::Button::new(egui::RichText::new("Clear all").size(12.0).color(
+                            if playback.queue().is_empty() {
+                                colors.subtle
+                            } else {
+                                colors.text
+                            },
+                        ))
+                        .min_size(egui::vec2(112.0, 38.0))
+                        .corner_radius(9.0)
+                        .fill(colors.surface)
+                        .stroke(egui::Stroke::new(1.0_f32, colors.border));
+                    if ui
+                        .add_enabled(!playback.queue().is_empty(), clear_button)
+                        .clicked()
+                    {
+                        clear_requested = true;
+                    }
+                });
+            });
+            ui.add_space(12.0);
 
             let mut remove = None;
             let mut move_item = None;
             if playback.queue().is_empty() {
                 ui.vertical_centered(|ui| {
-                    ui.add_space(36.0);
+                    ui.add_space(12.0);
                     ui.label(
                         egui::RichText::new("The queue is empty")
                             .size(15.0)
@@ -454,89 +481,95 @@ fn show_queue_popup(
                     );
                 });
             } else {
-                egui::ScrollArea::vertical()
-                    .id_salt("playback-queue-list")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 7.0;
-                        for (index, track_index) in playback.queue().iter().copied().enumerate() {
-                            egui::Frame::new()
-                                .fill(colors.surface)
-                                .stroke(egui::Stroke::new(1.0_f32, colors.border))
-                                .corner_radius(8.0)
-                                .inner_margin(egui::Margin::symmetric(10, 7))
-                                .show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(format!("{:02}", index + 1))
-                                                .size(11.0)
-                                                .color(colors.subtle),
-                                        );
-                                        ui.vertical(|ui| {
-                                            if let Some(track) =
-                                                library.model.tracks.get(track_index)
-                                            {
-                                                ui.label(
-                                                    egui::RichText::new(&track.title)
-                                                        .size(12.0)
-                                                        .strong()
-                                                        .color(colors.text),
-                                                );
-                                                ui.label(
-                                                    egui::RichText::new(&track.artist)
-                                                        .size(10.0)
-                                                        .color(colors.muted),
-                                                );
-                                            } else {
-                                                ui.label("Unavailable track");
-                                            }
-                                        });
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                if queue_action_button(
-                                                    ui,
-                                                    "remove-queue-item",
-                                                    index,
-                                                    egui_phosphor::regular::X,
-                                                    "Remove from queue",
-                                                    true,
-                                                )
-                                                .clicked()
-                                                {
-                                                    remove = Some(index);
-                                                }
-                                                if queue_action_button(
-                                                    ui,
-                                                    "move-queue-item-down",
-                                                    index,
-                                                    egui_phosphor::regular::ARROW_DOWN,
-                                                    "Move down",
-                                                    index + 1 < playback.queue().len(),
-                                                )
-                                                .clicked()
-                                                {
-                                                    move_item = Some((index, index + 1));
-                                                }
-                                                if queue_action_button(
-                                                    ui,
-                                                    "move-queue-item-up",
-                                                    index,
-                                                    egui_phosphor::regular::ARROW_UP,
-                                                    "Move up",
-                                                    index > 0,
-                                                )
-                                                .clicked()
-                                                {
-                                                    move_item = Some((index, index - 1));
-                                                }
-                                            },
-                                        );
+                let queue_len = playback.queue().len();
+                let mut show_items = |ui: &mut egui::Ui| {
+                    ui.spacing_mut().item_spacing.y = 7.0;
+                    for (index, track_index) in playback.queue().iter().copied().enumerate() {
+                        egui::Frame::new()
+                            .fill(colors.surface)
+                            .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                            .corner_radius(8.0)
+                            .inner_margin(egui::Margin::symmetric(10, 7))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{:02}", index + 1))
+                                            .size(11.0)
+                                            .color(colors.subtle),
+                                    );
+                                    ui.vertical(|ui| {
+                                        if let Some(track) = library.model.tracks.get(track_index) {
+                                            ui.label(
+                                                egui::RichText::new(&track.title)
+                                                    .size(12.0)
+                                                    .strong()
+                                                    .color(colors.text),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(&track.artist)
+                                                    .size(10.0)
+                                                    .color(colors.muted),
+                                            );
+                                        } else {
+                                            ui.label("Unavailable track");
+                                        }
                                     });
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if queue_action_button(
+                                                ui,
+                                                "remove-queue-item",
+                                                index,
+                                                egui_phosphor::regular::X,
+                                                "Remove from queue",
+                                                true,
+                                            )
+                                            .clicked()
+                                            {
+                                                remove = Some(index);
+                                            }
+                                            if queue_action_button(
+                                                ui,
+                                                "move-queue-item-down",
+                                                index,
+                                                egui_phosphor::regular::ARROW_DOWN,
+                                                "Move down",
+                                                index + 1 < queue_len,
+                                            )
+                                            .clicked()
+                                            {
+                                                move_item = Some((index, index + 1));
+                                            }
+                                            if queue_action_button(
+                                                ui,
+                                                "move-queue-item-up",
+                                                index,
+                                                egui_phosphor::regular::ARROW_UP,
+                                                "Move up",
+                                                index > 0,
+                                            )
+                                            .clicked()
+                                            {
+                                                move_item = Some((index, index - 1));
+                                            }
+                                        },
+                                    );
                                 });
-                        }
-                    });
+                            });
+                    }
+                };
+                if queue_len <= 8 {
+                    show_items(ui);
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("playback-queue-list")
+                        .max_height(420.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| show_items(ui));
+                }
+                drop(show_items);
             }
 
             if let Some((from, to)) = move_item {
@@ -549,6 +582,9 @@ fn show_queue_popup(
 
     if close_requested || response.should_close() {
         workbench.show_queue = false;
+    }
+    if clear_requested {
+        playback.clear_queue();
     }
 }
 

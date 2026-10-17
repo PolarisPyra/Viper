@@ -633,6 +633,17 @@ impl Playback {
         self.clear_scheduled_pending();
     }
 
+    /// Remove every manually queued track while allowing an already-started track to finish.
+    pub(crate) fn clear_queue(&mut self) {
+        self.manual_queue.clear();
+        if let Some(scheduled) = self.scheduled_track.as_mut() {
+            if scheduled.source == QueueSource::Manual {
+                scheduled.consume_queue = false;
+            }
+        }
+        self.clear_scheduled_pending();
+    }
+
     pub(crate) fn gapless_preparation_pending(&self) -> bool {
         self.gapless_preparation.is_some()
     }
