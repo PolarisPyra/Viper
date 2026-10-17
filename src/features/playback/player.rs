@@ -1,17 +1,100 @@
 use crate::features::library::{Album, Track};
-use rodio::{Decoder, MixerDeviceSink, Player};
+use rodio::{Decoder, MixerDeviceSink, Player, Source};
 use std::{
     collections::VecDeque,
     fs::File,
     io::BufReader,
     path::Path,
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, Receiver, TryRecvError},
+        Arc,
+    },
     time::Duration,
 };
 
 struct GaplessPreparation {
     track_index: usize,
     receiver: Receiver<Result<Decoder<BufReader<File>>, String>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QueueSource {
+    Return,
+    Manual,
+    Automatic,
+}
+
+struct ScheduledTrack {
+    index: usize,
+    source: QueueSource,
+    completion: Receiver<()>,
+    position_ns: Arc<AtomicU64>,
+    started: Arc<std::sync::atomic::AtomicBool>,
+    consume_queue: bool,
+}
+
+struct PositionSource<S> {
+    source: S,
+    position_ns: Arc<AtomicU64>,
+    started: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl<S> PositionSource<S> {
+    fn new(
+        source: S,
+        position_ns: Arc<AtomicU64>,
+        started: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        Self {
+            source,
+            position_ns,
+            started,
+        }
+    }
+}
+
+impl<S: Source> Iterator for PositionSource<S> {
+    type Item = rodio::Sample;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.source.next()?;
+        self.started.store(true, Ordering::Release);
+        let samples_per_second = u64::from(self.source.sample_rate().get())
+            .saturating_mul(u64::from(self.source.channels().get()));
+        if samples_per_second > 0 {
+            self.position_ns
+                .fetch_add(1_000_000_000 / samples_per_second, Ordering::Relaxed);
+        }
+        Some(sample)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.source.size_hint()
+    }
+}
+
+impl<S: Source> Source for PositionSource<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.source.current_span_len()
+    }
+    fn channels(&self) -> rodio::ChannelCount {
+        self.source.channels()
+    }
+    fn sample_rate(&self) -> rodio::SampleRate {
+        self.source.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.source.total_duration()
+    }
+    fn try_seek(&mut self, position: Duration) -> Result<(), rodio::source::SeekError> {
+        self.source.try_seek(position)?;
+        self.position_ns.store(
+            position.as_nanos().min(u128::from(u64::MAX)) as u64,
+            Ordering::Relaxed,
+        );
+        Ok(())
+    }
 }
 
 /// Repeat behavior for the current track or playback context.
@@ -34,6 +117,7 @@ pub struct Playback {
     pub error: Option<String>,
     output: Option<MixerDeviceSink>,
     player: Option<Player>,
+    queue_input: Option<Arc<rodio::queue::SourcesQueueInput>>,
     manual_queue: VecDeque<usize>,
     auto_queue: VecDeque<usize>,
     return_queue: VecDeque<usize>,
@@ -41,12 +125,10 @@ pub struct Playback {
     context_tracks: Vec<usize>,
     position: Duration,
     paused: bool,
-    gapless_active: bool,
-    gapless_track: Option<usize>,
-    gapless_track_queued: bool,
-    gapless_from_return_queue: bool,
-    gapless_from_manual_queue: bool,
-    source_count: usize,
+    current_completion: Option<Receiver<()>>,
+    current_position_ns: Option<Arc<AtomicU64>>,
+    current_started: Option<Arc<std::sync::atomic::AtomicBool>>,
+    scheduled_track: Option<ScheduledTrack>,
     gapless_preparation: Option<GaplessPreparation>,
     /// Whether upcoming tracks are shuffled.
     pub(crate) shuffle_enabled: bool,
@@ -90,9 +172,7 @@ impl Playback {
 
     /// Return whether a track is currently playing and not paused.
     pub fn is_playing(&self) -> bool {
-        self.current.is_some()
-            && !self.paused
-            && self.player.as_ref().is_some_and(|player| !player.empty())
+        self.current.is_some() && !self.paused
     }
 
     /// Return whether playback is paused.
@@ -103,10 +183,13 @@ impl Playback {
     /// Return the current playback position.
     pub fn position(&self) -> Duration {
         if self.paused {
-            self.position
-        } else {
-            self.player.as_ref().map_or(self.position, Player::get_pos)
+            return self.position;
         }
+        self.current_position_ns
+            .as_ref()
+            .map_or(self.position, |position| {
+                Duration::from_nanos(position.load(Ordering::Relaxed))
+            })
     }
 
     /// Seek within the current track, clamping the position to its known duration.
@@ -141,7 +224,7 @@ impl Playback {
             player.play();
             self.paused = false;
         } else {
-            self.position = player.get_pos();
+            self.position = self.position();
             player.pause();
             self.paused = true;
         }
@@ -238,82 +321,52 @@ impl Playback {
     /// # Arguments
     /// * `tracks` - Current library tracks.
     pub fn advance_if_finished(&mut self, tracks: &[Track]) {
-        if self.gapless_active {
-            let source_count = self.player.as_ref().map_or(0, Player::len);
-            let completed = self.source_count.saturating_sub(source_count);
-            if completed > 0 {
-                if let Some(finished_track) = self.current {
-                    self.push_history(finished_track);
-                }
-                self.current = if let Some(track_index) = self.gapless_track.take() {
-                    if self.gapless_track_queued {
-                        let queue = if self.gapless_from_return_queue {
-                            &mut self.return_queue
-                        } else if self.gapless_from_manual_queue {
-                            &mut self.manual_queue
-                        } else {
-                            &mut self.auto_queue
-                        };
-                        if queue.front() == Some(&track_index) {
-                            queue.pop_front();
-                        } else if let Some(position) =
-                            queue.iter().position(|&queued| queued == track_index)
-                        {
-                            queue.remove(position);
-                        }
-                    }
-                    self.gapless_track_queued = false;
-                    self.gapless_from_return_queue = false;
-                    self.gapless_from_manual_queue = false;
-                    Some(track_index)
-                } else {
-                    self.pop_next_queued_track()
-                };
-                self.position = Duration::ZERO;
-            }
-            self.source_count = source_count;
-            if source_count == 0 {
-                self.player = None;
-                self.position = Duration::ZERO;
-                self.paused = false;
-                self.gapless_active = false;
-                if let Some(finished_track) = self.current.take() {
-                    self.push_history(finished_track);
-                }
-                self.refill_repeating_queue();
-                if let Some(next) = self.pop_next_queued_track() {
-                    self.start_track(tracks, next);
-                }
-            } else {
-                self.gapless_active = source_count > 1;
-            }
+        if self.paused {
             return;
         }
-        let finished = self
-            .player
-            .as_ref()
-            .is_some_and(|player| player.empty() && !self.paused);
-        if !finished {
+        let completed = self.current_completion.as_ref().is_some_and(|receiver| {
+            matches!(
+                receiver.try_recv(),
+                Ok(()) | Err(TryRecvError::Disconnected)
+            )
+        });
+        if !completed {
             return;
         }
-
-        let finished_track = self.current;
+        if let Some(finished_track) = self.current.take() {
+            self.push_history(finished_track);
+        }
+        self.current_completion = None;
+        self.current_position_ns = None;
+        self.current_started = None;
+        self.position = Duration::ZERO;
         if self.repeat_mode == RepeatMode::One {
-            if let Some(track) = finished_track {
+            if let Some(track) = self.history.pop_back() {
                 self.start_track(tracks, track);
             }
             return;
         }
-        self.player = None;
-        self.current = None;
-        self.position = Duration::ZERO;
-        self.paused = false;
-        if let Some(track) = finished_track {
-            self.push_history(track);
+        if let Some(scheduled) = self.scheduled_track.take() {
+            if scheduled.consume_queue {
+                self.consume_scheduled(&scheduled);
+            }
+            self.current = Some(scheduled.index);
+            self.current_completion = Some(scheduled.completion);
+            self.current_position_ns = Some(scheduled.position_ns);
+            self.current_started = Some(scheduled.started);
+            return;
         }
         self.refill_repeating_queue();
         if let Some(next) = self.pop_next_queued_track() {
+            self.player = None;
+            self.queue_input = None;
+            self.paused = false;
             self.start_track(tracks, next);
+        } else {
+            self.current = None;
+            self.player = None;
+            self.queue_input = None;
+            self.paused = false;
         }
     }
 
@@ -325,22 +378,30 @@ impl Playback {
     pub fn update_gapless(&mut self, tracks: &[Track], enabled: bool) {
         if !enabled {
             self.gapless_preparation = None;
-            if self.gapless_active {
-                self.rebuild_current(tracks);
-            }
+            self.clear_scheduled_pending();
             return;
         }
         if self.current.is_none() {
+            self.refill_repeating_queue();
+            if let Some(next) = self.pop_next_queued_track() {
+                self.start_track(tracks, next);
+            }
             return;
         }
-        if self.gapless_active {
+        if self.paused
+            || self
+                .current_started
+                .as_ref()
+                .is_some_and(|started| !started.load(Ordering::Acquire))
+            || self.scheduled_track.is_some()
+        {
             return;
         }
-        let Some(player) = self.player.as_ref() else {
+        let Some(queue_input) = self.queue_input.as_ref().map(Arc::clone) else {
             return;
         };
-
-        let next_track = self.next_queued_track();
+        self.refill_repeating_queue();
+        let next_track = self.next_queued_track_with_source();
         if let Some(preparation) = self.gapless_preparation.take() {
             match preparation.receiver.try_recv() {
                 Err(TryRecvError::Empty) => {
@@ -348,41 +409,35 @@ impl Playback {
                     return;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    if next_track == Some(preparation.track_index) {
+                    if next_track.map(|(index, _)| index) == Some(preparation.track_index) {
                         self.discard_next_queued_track();
                         self.error = Some("Could not prepare the next audio track".to_owned());
                     }
                     return;
                 }
                 Ok(result) => {
-                    let is_current = next_track == Some(preparation.track_index);
+                    let is_current =
+                        next_track.map(|(index, _)| index) == Some(preparation.track_index);
                     if is_current {
                         match result {
                             Ok(decoder) => {
-                                let current_source_present = !player.empty();
-                                player.append(decoder);
-                                self.source_count = player.len();
-                                self.gapless_active = self.source_count > 1;
-                                self.gapless_track =
-                                    self.gapless_active.then_some(preparation.track_index);
-                                self.gapless_track_queued = self.gapless_active;
-                                self.gapless_from_return_queue =
-                                    self.gapless_active && !self.return_queue.is_empty();
-                                self.gapless_from_manual_queue = self.gapless_active
-                                    && self.return_queue.is_empty()
-                                    && !self.manual_queue.is_empty();
-                                if !current_source_present {
-                                    if let Some(finished_track) = self.current {
-                                        self.push_history(finished_track);
-                                    }
-                                    self.current = Some(preparation.track_index);
-                                    self.pop_next_queued_track();
-                                    self.gapless_track_queued = false;
-                                    self.position = Duration::ZERO;
-                                    self.gapless_track = None;
-                                    self.gapless_from_return_queue = false;
-                                    self.gapless_from_manual_queue = false;
-                                }
+                                let position_ns = Arc::new(AtomicU64::new(0));
+                                let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                let completion =
+                                    queue_input.append_with_signal(PositionSource::new(
+                                        decoder,
+                                        Arc::clone(&position_ns),
+                                        Arc::clone(&started),
+                                    ));
+                                let (_, source) = next_track.expect("prepared queue target exists");
+                                self.scheduled_track = Some(ScheduledTrack {
+                                    index: preparation.track_index,
+                                    source,
+                                    completion,
+                                    position_ns,
+                                    started,
+                                    consume_queue: true,
+                                });
                                 return;
                             }
                             Err(error) => {
@@ -396,10 +451,7 @@ impl Playback {
             }
         }
 
-        if self.gapless_active {
-            return;
-        }
-        let Some(track_index) = self.next_queued_track() else {
+        let Some((track_index, _)) = self.next_queued_track_with_source() else {
             return;
         };
         let Some(track) = tracks.get(track_index) else {
@@ -433,6 +485,51 @@ impl Playback {
         }
     }
 
+    fn clear_scheduled_pending(&mut self) {
+        self.gapless_preparation = None;
+        if self
+            .current_started
+            .as_ref()
+            .is_some_and(|started| !started.load(Ordering::Acquire))
+        {
+            return;
+        }
+        let cleared = self.queue_input.as_ref().map_or(0, |input| input.clear());
+        if cleared > 0 {
+            self.scheduled_track = None;
+        }
+    }
+
+    fn consume_scheduled(&mut self, scheduled: &ScheduledTrack) {
+        let queue = match scheduled.source {
+            QueueSource::Return => &mut self.return_queue,
+            QueueSource::Manual => &mut self.manual_queue,
+            QueueSource::Automatic => &mut self.auto_queue,
+        };
+        if let Some(position) = queue.iter().position(|&index| index == scheduled.index) {
+            queue.remove(position);
+        }
+    }
+
+    fn next_queued_track_with_source(&self) -> Option<(usize, QueueSource)> {
+        self.return_queue
+            .front()
+            .copied()
+            .map(|i| (i, QueueSource::Return))
+            .or_else(|| {
+                self.manual_queue
+                    .front()
+                    .copied()
+                    .map(|i| (i, QueueSource::Manual))
+            })
+            .or_else(|| {
+                self.auto_queue
+                    .front()
+                    .copied()
+                    .map(|i| (i, QueueSource::Automatic))
+            })
+    }
+
     /// Return manually queued tracks, excluding automatic album and shuffle tracks.
     pub(crate) fn queue(&self) -> &VecDeque<usize> {
         &self.manual_queue
@@ -456,14 +553,6 @@ impl Playback {
             .pop_front()
             .or_else(|| self.manual_queue.pop_front())
             .or_else(|| self.auto_queue.pop_front())
-    }
-
-    fn next_queued_track(&self) -> Option<usize> {
-        self.return_queue
-            .front()
-            .or_else(|| self.manual_queue.front())
-            .or_else(|| self.auto_queue.front())
-            .copied()
     }
 
     fn discard_next_queued_track(&mut self) {
@@ -491,9 +580,7 @@ impl Playback {
                     .filter(|&index| Some(index) != self.current),
             );
             self.shuffle_queue();
-            if self.gapless_active {
-                self.rebuild_gapless(tracks);
-            }
+            self.clear_scheduled_pending();
         } else {
             self.auto_queue.clear();
             if !self.context_tracks.is_empty() {
@@ -504,9 +591,7 @@ impl Playback {
                     }
                 }
             }
-            if self.gapless_active {
-                self.rebuild_gapless(tracks);
-            }
+            self.clear_scheduled_pending();
         }
     }
 
@@ -525,11 +610,9 @@ impl Playback {
         self.set_repeat_mode(RepeatMode::One, tracks);
     }
 
-    pub(crate) fn set_repeat_mode(&mut self, repeat_mode: RepeatMode, tracks: &[Track]) {
+    pub(crate) fn set_repeat_mode(&mut self, repeat_mode: RepeatMode, _tracks: &[Track]) {
         self.repeat_mode = repeat_mode;
-        if repeat_mode != RepeatMode::Off && self.gapless_active {
-            self.rebuild_current(tracks);
-        }
+        self.clear_scheduled_pending();
     }
 
     fn shuffle_queue(&mut self) {
@@ -547,22 +630,26 @@ impl Playback {
     /// Add a track to the end of the playback queue.
     pub(crate) fn enqueue(&mut self, track_index: usize) {
         self.manual_queue.push_back(track_index);
+        self.clear_scheduled_pending();
     }
 
     pub(crate) fn gapless_preparation_pending(&self) -> bool {
         self.gapless_preparation.is_some()
     }
 
+    pub(crate) fn has_playback_work(&self) -> bool {
+        self.current.is_some() || self.has_next()
+    }
+
     /// Remove a queued track and return it when the index exists.
     pub(crate) fn remove_queued(&mut self, queue_index: usize, _tracks: &[Track]) -> Option<usize> {
         let removed = self.manual_queue.remove(queue_index);
-        if removed.is_some()
-            && queue_index == 0
-            && self.gapless_active
-            && self.gapless_from_manual_queue
-        {
-            self.gapless_track_queued = false;
+        if let (Some(removed), Some(scheduled)) = (removed, self.scheduled_track.as_mut()) {
+            if scheduled.source == QueueSource::Manual && scheduled.index == removed {
+                scheduled.consume_queue = false;
+            }
         }
+        self.clear_scheduled_pending();
         removed
     }
 
@@ -574,35 +661,7 @@ impl Playback {
         if let Some(track) = self.manual_queue.remove(from) {
             self.manual_queue.insert(to, track);
         }
-    }
-
-    fn rebuild_gapless(&mut self, tracks: &[Track]) {
-        self.rebuild_current(tracks);
-        self.update_gapless(tracks, true);
-    }
-
-    fn rebuild_current(&mut self, tracks: &[Track]) {
-        self.gapless_preparation = None;
-        let (Some(current), Some(player)) = (self.current, self.player.take()) else {
-            self.gapless_active = false;
-            return;
-        };
-        let position = player.get_pos();
-        let paused = self.paused;
-        player.clear();
-        self.gapless_active = false;
-        self.gapless_track = None;
-        self.gapless_track_queued = false;
-        self.gapless_from_return_queue = false;
-        self.gapless_from_manual_queue = false;
-        self.start_track_at(tracks, current, position);
-        if paused {
-            if let Some(player) = &self.player {
-                player.pause();
-                self.paused = true;
-                self.position = position;
-            }
-        }
+        self.clear_scheduled_pending();
     }
 
     /// Skip the current track and start the next queued track, if one exists.
@@ -682,7 +741,7 @@ impl Playback {
     /// # Arguments
     /// * `remap` - Old-to-new track index mapping; `None` marks a removed track.
     pub fn remap_tracks(&mut self, remap: &[Option<usize>]) {
-        self.gapless_preparation = None;
+        self.clear_scheduled_pending();
         if let Some(current) = self.current {
             match remap.get(current).copied().flatten() {
                 Some(index) => self.current = Some(index),
@@ -717,9 +776,13 @@ impl Playback {
             .iter()
             .filter_map(|&index| remap.get(index).copied().flatten())
             .collect();
-        self.gapless_track = self
-            .gapless_track
-            .and_then(|index| remap.get(index).copied().flatten());
+        if let Some(scheduled) = self.scheduled_track.as_mut() {
+            if let Some(index) = remap.get(scheduled.index).copied().flatten() {
+                scheduled.index = index;
+            } else {
+                self.clear_scheduled_pending();
+            }
+        }
     }
 
     fn start_track(&mut self, tracks: &[Track], track_index: usize) {
@@ -731,28 +794,61 @@ impl Playback {
             self.current = None;
             return;
         };
-        let result = self.open_track(&track.path);
+        let result = self.open_decoder(&track.path);
         match result {
-            Ok(player) => {
-                player.set_volume(f32::from(self.volume.min(100)) / 100.0);
+            Ok(mut decoder) => {
+                let position_ns = Arc::new(AtomicU64::new(0));
+                let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 if !position.is_zero() {
-                    if let Err(error) = player.try_seek(position) {
+                    if let Err(error) = decoder.try_seek(position) {
                         self.error = Some(format!("Could not seek in audio track: {error}"));
                     }
+                    position_ns.store(
+                        position.as_nanos().min(u128::from(u64::MAX)) as u64,
+                        Ordering::Relaxed,
+                    );
                 }
+                if self.output.is_none() {
+                    match Self::open_output() {
+                        Ok(output) => self.output = Some(output),
+                        Err(error) => {
+                            self.error = Some(error);
+                            self.current = None;
+                            return;
+                        }
+                    }
+                }
+                let (queue_input, queue_output) = rodio::queue::queue(true);
+                let player = Player::connect_new(
+                    self.output
+                        .as_ref()
+                        .expect("audio output initialized")
+                        .mixer(),
+                );
+                player.set_volume(f32::from(self.volume.min(100)) / 100.0);
+                player.append(queue_output);
+                let completion = queue_input.append_with_signal(PositionSource::new(
+                    decoder,
+                    Arc::clone(&position_ns),
+                    Arc::clone(&started),
+                ));
                 self.player = Some(player);
-                self.source_count = 1;
-                self.gapless_active = false;
-                self.gapless_track = None;
-                self.gapless_track_queued = false;
-                self.gapless_from_return_queue = false;
-                self.gapless_from_manual_queue = false;
+                self.queue_input = Some(queue_input);
+                self.current_completion = Some(completion);
+                self.current_position_ns = Some(position_ns);
+                self.current_started = Some(started);
+                self.scheduled_track = None;
                 self.current = Some(track_index);
                 self.position = position;
                 self.paused = false;
             }
             Err(error) => {
                 self.player = None;
+                self.queue_input = None;
+                self.current_completion = None;
+                self.current_position_ns = None;
+                self.current_started = None;
+                self.scheduled_track = None;
                 self.current = None;
                 self.position = Duration::ZERO;
                 self.paused = false;
@@ -763,23 +859,11 @@ impl Playback {
         }
     }
 
-    fn open_track(&mut self, path: &Path) -> Result<Player, String> {
-        if self.output.is_none() {
-            let mut output = rodio::DeviceSinkBuilder::open_default_sink()
-                .map_err(|error| format!("Could not open audio output: {error}"))?;
-            output.log_on_drop(false);
-            self.output = Some(output);
-        }
-
-        let decoder = self.open_decoder(path)?;
-        let player = Player::connect_new(
-            self.output
-                .as_ref()
-                .expect("audio output is initialized")
-                .mixer(),
-        );
-        player.append(decoder);
-        Ok(player)
+    fn open_output() -> Result<MixerDeviceSink, String> {
+        let mut output = rodio::DeviceSinkBuilder::open_default_sink()
+            .map_err(|error| format!("Could not open audio output: {error}"))?;
+        output.log_on_drop(false);
+        Ok(output)
     }
 
     fn open_decoder(&self, path: &Path) -> Result<Decoder<BufReader<File>>, String> {
@@ -848,15 +932,14 @@ impl Playback {
     fn stop_current(&mut self) {
         self.gapless_preparation = None;
         self.player = None;
+        self.queue_input = None;
+        self.current_completion = None;
+        self.current_position_ns = None;
+        self.current_started = None;
+        self.scheduled_track = None;
         self.current = None;
         self.position = Duration::ZERO;
         self.paused = false;
-        self.source_count = 0;
-        self.gapless_active = false;
-        self.gapless_track = None;
-        self.gapless_track_queued = false;
-        self.gapless_from_return_queue = false;
-        self.gapless_from_manual_queue = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -874,18 +957,17 @@ impl Default for Playback {
             error: None,
             output: None,
             player: None,
+            queue_input: None,
             manual_queue: VecDeque::new(),
             auto_queue: VecDeque::new(),
             return_queue: VecDeque::new(),
             history: VecDeque::new(),
             position: Duration::ZERO,
             paused: false,
-            gapless_active: false,
-            gapless_track: None,
-            gapless_track_queued: false,
-            gapless_from_return_queue: false,
-            gapless_from_manual_queue: false,
-            source_count: 0,
+            current_completion: None,
+            current_position_ns: None,
+            current_started: None,
+            scheduled_track: None,
             gapless_preparation: None,
             shuffle_enabled: false,
             context_tracks: Vec::new(),

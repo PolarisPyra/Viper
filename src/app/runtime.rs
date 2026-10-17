@@ -133,8 +133,8 @@ impl eframe::App for ViperApp {
         if self.library.scanning {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        if playback.current.is_some() {
-            if !playback.is_paused() {
+        if playback.has_playback_work() {
+            if playback.current.is_some() && !playback.is_paused() {
                 playback.advance_if_finished(&self.library.model.tracks);
             }
             let repeat_one = playback.repeat_mode == crate::features::playback::RepeatMode::One;
@@ -142,7 +142,7 @@ impl eframe::App for ViperApp {
                 &self.library.model.tracks,
                 self.settings.gapless_playback && !repeat_one,
             );
-            if playback.current.is_some() {
+            if playback.has_playback_work() {
                 let repaint_interval = if playback.gapless_preparation_pending() {
                     Duration::from_millis(16)
                 } else if self.settings.gapless_playback && playback.has_next() && !repeat_one {
