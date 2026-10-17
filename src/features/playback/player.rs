@@ -6,7 +6,7 @@ use std::{
     io::BufReader,
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, Receiver, TryRecvError},
         Arc,
     },
@@ -30,24 +30,20 @@ struct ScheduledTrack {
     source: QueueSource,
     completion: Receiver<()>,
     position_ns: Arc<AtomicU64>,
-    started: Arc<std::sync::atomic::AtomicBool>,
+    started: Arc<AtomicBool>,
     consume_queue: bool,
 }
 
 struct PositionSource<S> {
-    source: S,
+    source: rodio::source::TrackPosition<S>,
     position_ns: Arc<AtomicU64>,
-    started: Arc<std::sync::atomic::AtomicBool>,
+    started: Arc<AtomicBool>,
 }
 
-impl<S> PositionSource<S> {
-    fn new(
-        source: S,
-        position_ns: Arc<AtomicU64>,
-        started: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Self {
+impl<S: Source> PositionSource<S> {
+    fn new(source: S, position_ns: Arc<AtomicU64>, started: Arc<AtomicBool>) -> Self {
         Self {
-            source,
+            source: source.track_position(),
             position_ns,
             started,
         }
@@ -60,12 +56,10 @@ impl<S: Source> Iterator for PositionSource<S> {
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.source.next()?;
         self.started.store(true, Ordering::Release);
-        let samples_per_second = u64::from(self.source.sample_rate().get())
-            .saturating_mul(u64::from(self.source.channels().get()));
-        if samples_per_second > 0 {
-            self.position_ns
-                .fetch_add(1_000_000_000 / samples_per_second, Ordering::Relaxed);
-        }
+        self.position_ns.store(
+            self.source.get_pos().as_nanos().min(u128::from(u64::MAX)) as u64,
+            Ordering::Relaxed,
+        );
         Some(sample)
     }
 
@@ -90,7 +84,7 @@ impl<S: Source> Source for PositionSource<S> {
     fn try_seek(&mut self, position: Duration) -> Result<(), rodio::source::SeekError> {
         self.source.try_seek(position)?;
         self.position_ns.store(
-            position.as_nanos().min(u128::from(u64::MAX)) as u64,
+            self.source.get_pos().as_nanos().min(u128::from(u64::MAX)) as u64,
             Ordering::Relaxed,
         );
         Ok(())
@@ -123,8 +117,6 @@ pub struct Playback {
     return_queue: VecDeque<usize>,
     history: VecDeque<usize>,
     context_tracks: Vec<usize>,
-    position: Duration,
-    paused: bool,
     current_completion: Option<Receiver<()>>,
     current_position_ns: Option<Arc<AtomicU64>>,
     current_started: Option<Arc<std::sync::atomic::AtomicBool>>,
@@ -172,22 +164,19 @@ impl Playback {
 
     /// Return whether a track is currently playing and not paused.
     pub fn is_playing(&self) -> bool {
-        self.current.is_some() && !self.paused
+        self.current.is_some() && !self.is_paused()
     }
 
     /// Return whether playback is paused.
     pub fn is_paused(&self) -> bool {
-        self.paused
+        self.player.as_ref().is_some_and(Player::is_paused)
     }
 
     /// Return the current playback position.
     pub fn position(&self) -> Duration {
-        if self.paused {
-            return self.position;
-        }
         self.current_position_ns
             .as_ref()
-            .map_or(self.position, |position| {
+            .map_or(Duration::ZERO, |position| {
                 Duration::from_nanos(position.load(Ordering::Relaxed))
             })
     }
@@ -210,7 +199,7 @@ impl Playback {
             return;
         };
         match player.try_seek(position) {
-            Ok(()) => self.position = position,
+            Ok(()) => {}
             Err(error) => self.error = Some(format!("Could not seek in audio track: {error}")),
         }
     }
@@ -220,13 +209,10 @@ impl Playback {
         let Some(player) = &self.player else {
             return;
         };
-        if self.paused {
+        if player.is_paused() {
             player.play();
-            self.paused = false;
         } else {
-            self.position = self.position();
             player.pause();
-            self.paused = true;
         }
     }
 
@@ -321,7 +307,7 @@ impl Playback {
     /// # Arguments
     /// * `tracks` - Current library tracks.
     pub fn advance_if_finished(&mut self, tracks: &[Track]) {
-        if self.paused {
+        if self.is_paused() {
             return;
         }
         let completed = self.current_completion.as_ref().is_some_and(|receiver| {
@@ -339,7 +325,6 @@ impl Playback {
         self.current_completion = None;
         self.current_position_ns = None;
         self.current_started = None;
-        self.position = Duration::ZERO;
         if self.repeat_mode == RepeatMode::One {
             if let Some(track) = self.history.pop_back() {
                 self.start_track(tracks, track);
@@ -360,13 +345,11 @@ impl Playback {
         if let Some(next) = self.pop_next_queued_track() {
             self.player = None;
             self.queue_input = None;
-            self.paused = false;
             self.start_track(tracks, next);
         } else {
             self.current = None;
             self.player = None;
             self.queue_input = None;
-            self.paused = false;
         }
     }
 
@@ -388,7 +371,7 @@ impl Playback {
             }
             return;
         }
-        if self.paused
+        if self.is_paused()
             || self
                 .current_started
                 .as_ref()
@@ -422,7 +405,7 @@ impl Playback {
                         match result {
                             Ok(decoder) => {
                                 let position_ns = Arc::new(AtomicU64::new(0));
-                                let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                let started = Arc::new(AtomicBool::new(false));
                                 let completion =
                                     queue_input.append_with_signal(PositionSource::new(
                                         decoder,
@@ -807,17 +790,15 @@ impl Playback {
         };
         let result = self.open_decoder(&track.path);
         match result {
-            Ok(mut decoder) => {
+            Ok(decoder) => {
                 let position_ns = Arc::new(AtomicU64::new(0));
-                let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let started = Arc::new(AtomicBool::new(false));
+                let mut source =
+                    PositionSource::new(decoder, Arc::clone(&position_ns), Arc::clone(&started));
                 if !position.is_zero() {
-                    if let Err(error) = decoder.try_seek(position) {
+                    if let Err(error) = source.try_seek(position) {
                         self.error = Some(format!("Could not seek in audio track: {error}"));
                     }
-                    position_ns.store(
-                        position.as_nanos().min(u128::from(u64::MAX)) as u64,
-                        Ordering::Relaxed,
-                    );
                 }
                 if self.output.is_none() {
                     match Self::open_output() {
@@ -838,11 +819,7 @@ impl Playback {
                 );
                 player.set_volume(f32::from(self.volume.min(100)) / 100.0);
                 player.append(queue_output);
-                let completion = queue_input.append_with_signal(PositionSource::new(
-                    decoder,
-                    Arc::clone(&position_ns),
-                    Arc::clone(&started),
-                ));
+                let completion = queue_input.append_with_signal(source);
                 self.player = Some(player);
                 self.queue_input = Some(queue_input);
                 self.current_completion = Some(completion);
@@ -850,8 +827,6 @@ impl Playback {
                 self.current_started = Some(started);
                 self.scheduled_track = None;
                 self.current = Some(track_index);
-                self.position = position;
-                self.paused = false;
             }
             Err(error) => {
                 self.player = None;
@@ -861,8 +836,6 @@ impl Playback {
                 self.current_started = None;
                 self.scheduled_track = None;
                 self.current = None;
-                self.position = Duration::ZERO;
-                self.paused = false;
                 self.manual_queue.clear();
                 self.auto_queue.clear();
                 self.error = Some(error);
@@ -949,8 +922,6 @@ impl Playback {
         self.current_started = None;
         self.scheduled_track = None;
         self.current = None;
-        self.position = Duration::ZERO;
-        self.paused = false;
     }
 
     fn push_history(&mut self, track: usize) {
@@ -973,8 +944,6 @@ impl Default for Playback {
             auto_queue: VecDeque::new(),
             return_queue: VecDeque::new(),
             history: VecDeque::new(),
-            position: Duration::ZERO,
-            paused: false,
             current_completion: None,
             current_position_ns: None,
             current_started: None,
