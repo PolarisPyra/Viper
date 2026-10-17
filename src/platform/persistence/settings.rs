@@ -185,6 +185,61 @@ pub struct LastFmSettings {
 }
 
 const LASTFM_KEYRING_SERVICE: &str = "viper-music-lastfm";
+const DISCORD_KEYRING_SERVICE: &str = "viper-music-discord";
+
+fn discord_keyring_entry() -> io::Result<keyring::Entry> {
+    keyring::Entry::new(DISCORD_KEYRING_SERVICE, "application-id")
+        .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))
+}
+
+fn load_discord_application_id(legacy_value: Option<String>) -> io::Result<Option<String>> {
+    let entry = discord_keyring_entry()?;
+    let application_id = match entry.get_password() {
+        Ok(value) => Some(value),
+        Err(keyring::Error::NoEntry) => {
+            if let Some(value) = legacy_value.as_deref().filter(|value| !value.is_empty()) {
+                entry
+                    .set_password(value)
+                    .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
+                Some(value.to_owned())
+            } else {
+                None
+            }
+        }
+        Err(error) => return Err(io::Error::new(ErrorKind::Other, error.to_string())),
+    };
+
+    if legacy_value.is_some() {
+        let connection = super::database::open()?;
+        connection
+            .pragma_update(None, "secure_delete", "ON")
+            .map_err(super::database::database_error)?;
+        connection
+            .execute(
+                "UPDATE app_settings SET discord_application_id = NULL WHERE id = 1",
+                [],
+            )
+            .map_err(super::database::database_error)?;
+        connection
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+            .map_err(super::database::database_error)?;
+    }
+
+    Ok(application_id)
+}
+
+fn save_discord_application_id(application_id: Option<&str>) -> io::Result<()> {
+    let entry = discord_keyring_entry()?;
+    match application_id.filter(|value| !value.is_empty()) {
+        Some(value) => entry
+            .set_password(value)
+            .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string())),
+        None => match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(io::Error::new(ErrorKind::Other, error.to_string())),
+        },
+    }
+}
 
 fn lastfm_keyring_entry(name: &str) -> io::Result<keyring::Entry> {
     keyring::Entry::new(LASTFM_KEYRING_SERVICE, name)
@@ -406,7 +461,7 @@ impl Settings {
             .query_row(
                 "SELECT music_path, window_width, window_height, startup_view,
                         left_panel_width, left_panel_hidden, right_panel_width, volume,
-                        album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
+                album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                         lyrics_panel_open, discord_rich_presence_enabled,
                         gapless_playback, album_list_column_widths, album_format_badges,
                         lastfm_scrobbling_enabled
@@ -491,6 +546,9 @@ impl Settings {
             load_legacy_settings()?.unwrap_or_default()
         };
 
+        settings.discord_application_id =
+            load_discord_application_id(settings.discord_application_id.take())?;
+
         {
             let mut statement = connection
                 .prepare("SELECT album_key, favorite, rating, play_count, last_played, added FROM album_state")
@@ -557,6 +615,7 @@ impl Settings {
     /// # Errors
     /// Returns an I/O error if encoding or database writes fail.
     pub fn save(&self) -> io::Result<()> {
+        save_discord_application_id(self.discord_application_id.as_deref())?;
         let mut connection = super::database::open()?;
         let transaction = connection
             .transaction()
@@ -569,7 +628,7 @@ impl Settings {
             "INSERT INTO app_settings (
                 id, music_path, window_width, window_height, startup_view,
                 left_panel_width, left_panel_hidden, right_panel_width, volume,
-                album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
+                        album_sort, sort_ascending, discord_application_id, album_layout, compact_sidebar, theme,
                 lyrics_panel_open, discord_rich_presence_enabled,
                      gapless_playback, album_list_column_widths, album_format_badges,
                      lastfm_scrobbling_enabled
@@ -580,7 +639,7 @@ impl Settings {
                 left_panel_width=excluded.left_panel_width, left_panel_hidden=excluded.left_panel_hidden,
                 right_panel_width=excluded.right_panel_width, volume=excluded.volume,
                 album_sort=excluded.album_sort, sort_ascending=excluded.sort_ascending,
-                discord_application_id=excluded.discord_application_id,
+                discord_application_id=NULL,
                 album_layout=excluded.album_layout,
                 compact_sidebar=excluded.compact_sidebar,
                 theme=excluded.theme,
@@ -601,7 +660,7 @@ impl Settings {
                 self.volume,
                 encode_setting(&self.album_sort)?,
                 self.sort_ascending,
-                self.discord_application_id,
+                Option::<String>::None,
                 encode_setting(&self.album_layout)?,
                 self.compact_sidebar,
                 encode_setting(&self.theme)?,
