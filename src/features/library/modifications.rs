@@ -5,6 +5,7 @@ use super::{
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
+    sync::Arc,
 };
 
 /// Merge newly discovered tracks into an existing library.
@@ -34,10 +35,10 @@ pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTrac
         let track_index = library.tracks.len();
         let key =
             (!track.album.trim().is_empty()).then(|| album_key(&track.album, &track.album_artist));
-        library.tracks.push(track);
+        Arc::make_mut(&mut library.tracks).push(track);
         added_count += 1;
         let Some(key) = key else {
-            library.track_album.push(None);
+            Arc::make_mut(&mut library.track_album).push(None);
             continue;
         };
         let art = discovered.album_art.get(&key).cloned();
@@ -59,8 +60,7 @@ pub fn merge_discovered_tracks(library: &mut Library, discovered: DiscoveredTrac
             album_indices.insert(key, index);
             index
         };
-        library
-            .track_album
+        Arc::make_mut(&mut library.track_album)
             .push(Some(super::model::AlbumIndex::new(album_index)));
         updated_albums.insert(album_index);
     }
@@ -96,7 +96,7 @@ pub fn remove_library_tracks(
 ) -> Vec<Option<usize>> {
     let mut remap = vec![None; library.tracks.len()];
     let mut tracks = Vec::with_capacity(library.tracks.len());
-    for (old_index, track) in library.tracks.drain(..).enumerate() {
+    for (old_index, track) in Arc::make_mut(&mut library.tracks).drain(..).enumerate() {
         if removed_paths
             .iter()
             .any(|removed| track.path == *removed || track.path.starts_with(removed))
@@ -113,12 +113,14 @@ pub fn remove_library_tracks(
             .filter_map(|&old_index| remap.get(old_index).copied().flatten())
             .collect();
     }
-    library.track_album = library
-        .track_album
-        .iter()
-        .enumerate()
-        .filter_map(|(old_index, &album_index)| remap[old_index].map(|_| album_index))
-        .collect();
-    library.tracks = tracks;
+    library.track_album = Arc::new(
+        library
+            .track_album
+            .iter()
+            .enumerate()
+            .filter_map(|(old_index, &album_index)| remap[old_index].map(|_| album_index))
+            .collect(),
+    );
+    library.tracks = Arc::new(tracks);
     remap
 }

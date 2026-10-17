@@ -80,11 +80,11 @@ pub struct Album {
 #[derive(Default)]
 pub struct Library {
     /// All discovered tracks.
-    pub tracks: Vec<Track>,
+    pub tracks: Arc<Vec<Track>>,
     /// Albums grouped from tracks with album metadata.
     pub albums: Vec<Album>,
     /// For each track, its album index, or `None` when it has no album.
-    pub track_album: Vec<Option<AlbumIndex>>,
+    pub track_album: Arc<Vec<Option<AlbumIndex>>>,
     /// Number of directories that could not be scanned.
     pub unreadable_directories: usize,
     pub(crate) scan_error: Option<String>,

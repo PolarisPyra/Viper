@@ -462,7 +462,7 @@ impl Playback {
         self.set_repeat_mode(RepeatMode::One, tracks);
     }
 
-    fn set_repeat_mode(&mut self, repeat_mode: RepeatMode, tracks: &[Track]) {
+    pub(crate) fn set_repeat_mode(&mut self, repeat_mode: RepeatMode, tracks: &[Track]) {
         self.repeat_mode = repeat_mode;
         if repeat_mode != RepeatMode::Off && self.gapless_active {
             self.rebuild_current(tracks);

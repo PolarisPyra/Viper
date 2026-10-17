@@ -33,8 +33,12 @@ webbrowser = "1"
 keyring = { version = "4.2", default-features = false, features = ["v1"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+async-std = "1.13"
+futures-lite = "2"
 libc = "0.2"
+mpris-server = "0.10"
 pavao = "0.3.1"
+url = "2"
 
 [profile.release]
 lto = "thin"

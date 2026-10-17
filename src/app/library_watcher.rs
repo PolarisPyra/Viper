@@ -16,7 +16,16 @@ impl ViperApp {
                     let update = self
                         .library
                         .apply_watcher_update(discovered, &removed_paths);
-                    self.playback.remap_tracks(&update.track_remap);
+                    self.playback
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .remap_tracks(&update.track_remap);
+                    #[cfg(target_os = "linux")]
+                    self.mpris.set_library(
+                        std::sync::Arc::clone(&self.library.model.tracks),
+                        std::sync::Arc::clone(&self.library.model.track_album),
+                        &self.library.model.albums,
+                    );
                     if update.selected_album_cleared {
                         self.workbench.show_album_details = false;
                     }

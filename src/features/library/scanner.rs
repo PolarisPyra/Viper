@@ -412,9 +412,9 @@ pub(crate) fn scan_library_with_auth(
     }
 
     Library {
-        tracks,
+        tracks: std::sync::Arc::new(tracks),
         albums,
-        track_album,
+        track_album: std::sync::Arc::new(track_album),
         unreadable_directories,
         scan_error: None,
         missing_metadata_tracks: missing_metadata_tracks.load(Ordering::Relaxed),

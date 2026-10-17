@@ -14,6 +14,7 @@ use eframe::egui;
 use secrecy::ExposeSecret;
 use std::{
     path::PathBuf,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -28,7 +29,7 @@ mod runtime;
 pub struct ViperApp {
     pub(crate) workbench: WorkbenchState,
     pub(crate) library: LibraryFeature,
-    pub(crate) playback: Playback,
+    pub(crate) playback: Arc<Mutex<Playback>>,
     pub(crate) lyrics: LyricsFeature,
     pub(crate) settings: Settings,
     pub(crate) preferences: PreferencesState,
@@ -41,6 +42,8 @@ pub struct ViperApp {
     last_window_size: Option<[f32; 2]>,
     #[cfg(target_os = "linux")]
     smb_auth: Option<crate::features::library::smb::SmbAuth>,
+    #[cfg(target_os = "linux")]
+    pub(crate) mpris: crate::platform::mpris::MprisBridge,
 }
 
 impl ViperApp {
@@ -112,6 +115,9 @@ impl ViperApp {
             .map_or(0, |duration| duration.as_nanos() as u64);
         let mut playback = Playback::default();
         playback.volume = settings.volume;
+        let playback = Arc::new(Mutex::new(playback));
+        #[cfg(target_os = "linux")]
+        let mpris = crate::platform::mpris::MprisBridge::new(Arc::clone(&playback));
         let mut app = Self {
             workbench: WorkbenchState::new(startup_page),
             library: LibraryFeature::new(random_sort_seed),
@@ -134,12 +140,17 @@ impl ViperApp {
                     password: samba.password.clone(),
                     workgroup: samba.workgroup.clone(),
                 }),
+            #[cfg(target_os = "linux")]
+            mpris,
         };
         if let Some(path) = saved_path {
             #[cfg(target_os = "linux")]
             if crate::features::library::smb::is_smb_path(&path) {
                 if let Some(auth) = app.smb_auth.clone() {
-                    app.playback.set_smb_auth(auth);
+                    app.playback
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .set_smb_auth(auth);
                     app.start_scan(path);
                 } else {
                     app.error = Some("Reconnect to your SMB share in Preferences".into());
@@ -197,7 +208,10 @@ impl ViperApp {
             self.settings
                 .save()
                 .context("Could not save SMB location")?;
-            self.playback.set_smb_auth(auth.clone());
+            self.playback
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .set_smb_auth(auth.clone());
             self.smb_auth = Some(auth);
             self.start_scan(path);
             Ok(())
@@ -276,12 +290,12 @@ impl ViperApp {
         }
     }
 
-    fn observe_playback_track(&mut self) {
-        if self.last_observed_track == self.playback.current {
+    fn observe_playback_track(&mut self, playback: &Playback) {
+        if self.last_observed_track == playback.current {
             return;
         }
-        self.last_observed_track = self.playback.current;
-        let Some(track_index) = self.playback.current else {
+        self.last_observed_track = playback.current;
+        let Some(track_index) = playback.current else {
             return;
         };
         let Some(album_index) = self

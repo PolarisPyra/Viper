@@ -10,6 +10,10 @@ impl Default for ViperApp {
 
 impl eframe::App for ViperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let playback_handle = std::sync::Arc::clone(&self.playback);
+        let mut playback = playback_handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.persist_window_size(ctx);
         crate::shared::ui::theme::apply(ctx, self.settings.theme);
         ctx.style_mut(|style| {
@@ -59,7 +63,7 @@ impl eframe::App for ViperApp {
             && !ctx.wants_keyboard_input()
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F5));
         if shuffle_pressed {
-            self.playback.play_random_track(&self.library.model.tracks);
+            playback.play_random_track(&self.library.model.tracks);
         }
         if !self.workbench.show_album_details
             && !self.workbench.show_preferences
@@ -74,8 +78,8 @@ impl eframe::App for ViperApp {
             && !ctx.wants_keyboard_input()
             && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Space));
         if space_pressed {
-            if self.playback.current.is_some() {
-                self.playback.toggle_pause();
+            if playback.current.is_some() {
+                playback.toggle_pause();
             } else if let Some(album_index) = self.library.view.selected_album {
                 if let Some(album) = self.library.model.albums.get(album_index) {
                     if let Some(track_index) = self
@@ -84,45 +88,62 @@ impl eframe::App for ViperApp {
                         .selected_track
                         .filter(|index| album.tracks.contains(index))
                     {
-                        self.playback.play_track_in_album(
+                        playback.play_track_in_album(
                             album,
                             &self.library.model.tracks,
                             track_index,
                         );
                     } else {
-                        self.playback.play_album(album, &self.library.model.tracks);
+                        playback.play_album(album, &self.library.model.tracks);
                     }
                 }
-            } else if self.playback.shuffle_enabled {
-                self.playback.play_random_track(&self.library.model.tracks);
+            } else if playback.shuffle_enabled {
+                playback.play_random_track(&self.library.model.tracks);
             }
         }
+        drop(playback);
         if self.poll_scan() {
             self.artwork_cache.clear();
         }
+        #[cfg(target_os = "linux")]
+        let mut artwork_updated = false;
         for (album_index, artwork) in self.library.background.poll_artwork(ctx) {
             if let Some(album) = self.library.model.albums.get_mut(album_index) {
                 album.art = Some(artwork);
+                #[cfg(target_os = "linux")]
+                {
+                    artwork_updated = true;
+                }
             }
+        }
+        #[cfg(target_os = "linux")]
+        if artwork_updated {
+            self.mpris.set_library(
+                std::sync::Arc::clone(&self.library.model.tracks),
+                std::sync::Arc::clone(&self.library.model.track_album),
+                &self.library.model.albums,
+            );
         }
         self.poll_file_watcher(ctx);
         self.artwork_cache.poll(ctx);
         self.artwork_cache.begin_frame();
+        let mut playback = playback_handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self.library.scanning {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        if self.playback.current.is_some() {
-            if !self.playback.is_paused() {
-                self.playback
-                    .advance_if_finished(&self.library.model.tracks);
+        if playback.current.is_some() {
+            if !playback.is_paused() {
+                playback.advance_if_finished(&self.library.model.tracks);
             }
-            self.playback.update_gapless(
+            let repeat_one = playback.repeat_mode == crate::features::playback::RepeatMode::One;
+            playback.update_gapless(
                 &self.library.model.tracks,
-                self.settings.gapless_playback
-                    && self.playback.repeat_mode != crate::features::playback::RepeatMode::One,
+                self.settings.gapless_playback && !repeat_one,
             );
-            if self.playback.current.is_some() {
-                let repaint_interval = if self.playback.gapless_preemption_pending() {
+            if playback.current.is_some() {
+                let repaint_interval = if playback.gapless_preemption_pending() {
                     Duration::from_millis(16)
                 } else {
                     Duration::from_millis(400)
@@ -130,7 +151,7 @@ impl eframe::App for ViperApp {
                 ctx.request_repaint_after(repaint_interval);
             }
         }
-        self.observe_playback_track();
+        self.observe_playback_track(&playback);
         if self.lastfm_service.poll(&mut self.lastfm_settings) {
             if let Err(error) =
                 crate::platform::persistence::settings::save_lastfm_settings(&self.lastfm_settings)
@@ -138,7 +159,7 @@ impl eframe::App for ViperApp {
                 self.error = Some(format!("Could not save Last.fm session: {error}"));
             }
         }
-        let current_track_index = self.playback.current;
+        let current_track_index = playback.current;
         let current_track =
             current_track_index.and_then(|index| self.library.model.tracks.get(index));
         self.lastfm_service.update_playback(
@@ -146,10 +167,10 @@ impl eframe::App for ViperApp {
             &self.lastfm_settings,
             current_track_index,
             current_track,
-            self.playback.position(),
+            playback.position(),
         );
 
-        let current_track = self.playback.current.and_then(|index| {
+        let current_track = playback.current.and_then(|index| {
             let track = self.library.model.tracks.get(index)?;
             Some((
                 index,
@@ -166,15 +187,15 @@ impl eframe::App for ViperApp {
                 None
             },
             current_track,
-            self.playback.is_paused(),
-            self.playback.position(),
+            playback.is_paused(),
+            playback.position(),
         );
 
         let actions = {
             let mut context = crate::workbench::WorkbenchContext {
                 state: &mut self.workbench,
                 library: &mut self.library,
-                playback: &mut self.playback,
+                playback: &mut playback,
                 lyrics: &mut self.lyrics,
                 settings: &mut self.settings,
                 preferences: &mut self.preferences,
@@ -185,6 +206,7 @@ impl eframe::App for ViperApp {
             };
             crate::workbench::show(ctx, &mut context)
         };
+        drop(playback);
         self.artwork_cache.finish_frame(ctx);
         for action in actions {
             match action {
